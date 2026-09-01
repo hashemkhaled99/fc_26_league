@@ -2,14 +2,13 @@ import { z } from "zod";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { canUserBid, getAvailableBudget } from "@/lib/auction/budget";
-import { getBidTimerSeconds, isMarketLocked } from "@/lib/auction/close";
+import { isMarketLocked } from "@/lib/auction/close";
+import { secondsUntilMarketWindowEnd } from "@/lib/auction/listings";
 import { setAuctionEnd } from "@/lib/timerStore";
 import {
   MIN_BID_INCREMENT,
   BID_RATE_LIMIT_MS,
   SQUAD_LIMIT,
-  BID_EXTEND_BY_SEC,
-  BID_EXTEND_THRESHOLD_SEC,
 } from "@/lib/auction/constants";
 import {
   getActiveEffects,
@@ -130,12 +129,8 @@ export async function POST(request: Request) {
       await prisma.marketEffect.delete({ where: { id: overdraft.id } });
     }
 
-    const timerSeconds = getBidTimerSeconds(auction.room.settings);
-    const remainingSec = (auction.endsAt.getTime() - now) / 1000;
-    const endsAt =
-      remainingSec <= BID_EXTEND_THRESHOLD_SEC
-        ? new Date(auction.endsAt.getTime() + BID_EXTEND_BY_SEC * 1000)
-        : auction.endsAt;
+    const endsAt = auction.endsAt;
+    const timerSeconds = secondsUntilMarketWindowEnd(new Date(now));
     const expectedBid = auction.currentBid;
 
     const updateResult = await prisma.auction.updateMany({

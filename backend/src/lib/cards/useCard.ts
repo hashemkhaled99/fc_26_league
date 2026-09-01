@@ -2,8 +2,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { SQUAD_LIMIT, DEFAULT_STARTING_BID } from "@/lib/auction/constants";
 import { getCommittedBudget } from "@/lib/auction/budget";
-import { getBidTimerSeconds } from "@/lib/auction/close";
-import { nextListingEndsAt } from "@/lib/auction/listings";
+import { getMarketWindowEnd, nextListingEndsAt } from "@/lib/auction/listings";
 import { setAuctionEnd } from "@/lib/timerStore";
 import { ensureIconPool } from "@/lib/icons/generate";
 import { CARD_BY_KEY, pickWeightedCardKeys, DEFAULT_TRANSFER_CARD_KEYS } from "./types";
@@ -242,8 +241,7 @@ export async function useCard(input: UseCardInput) {
         await prisma.marketEffect.delete({ where: { id: trap.id } });
       }
 
-      const timerSeconds = getBidTimerSeconds(room.settings);
-      const endsAt = new Date(Date.now() + timerSeconds * 1000);
+      const endsAt = getMarketWindowEnd();
       const auction = await prisma.$transaction(async (tx) => {
         await tx.player.update({
           where: { id: player.id },

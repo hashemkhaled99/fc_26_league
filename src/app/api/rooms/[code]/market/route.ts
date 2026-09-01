@@ -5,7 +5,7 @@ import { SQUAD_LIMIT } from "@/lib/auction/constants";
 import { getCatalogFilterOptions } from "@/lib/players/catalog-filters";
 import { getLeagueLookup } from "@/lib/players/seed";
 import { getActiveEffects, getBlacklists } from "@/lib/cards/effects";
-import { refreshAvailableListings } from "@/lib/auction/listings";
+import { refreshAvailableListings, syncActiveAuctionWindows } from "@/lib/auction/listings";
 import { apiError, apiSuccess } from "@/lib/api";
 
 const PLAYER_SELECT = {
@@ -52,6 +52,7 @@ export async function GET(
     if (room.id !== session.roomId) return apiError("Wrong room");
 
     await refreshAvailableListings(room.id);
+    await syncActiveAuctionWindows(room.id);
 
     const [availablePlayersRaw, activeAuctions, user, availableBudget, committedBudget, squadCount] =
       await Promise.all([

@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
-import { getBidTimerSeconds, isMarketLocked } from "@/lib/auction/close";
+import { isMarketLocked } from "@/lib/auction/close";
+import { getMarketWindowEnd, secondsUntilMarketWindowEnd } from "@/lib/auction/listings";
 import { setAuctionEnd } from "@/lib/timerStore";
 import { emitToRoom } from "@/lib/socket-emit";
 import { apiError, apiSuccess } from "@/lib/api";
@@ -49,8 +50,8 @@ export async function POST(
     });
     if (existingAuction) return apiError("Auction already active for this player");
 
-    const timerSeconds = getBidTimerSeconds(room.settings);
-    const endsAt = new Date(Date.now() + timerSeconds * 1000);
+    const endsAt = getMarketWindowEnd();
+    const timerSeconds = secondsUntilMarketWindowEnd();
 
     const seller = await prisma.user.findUnique({
       where: { id: session.userId },

@@ -3,7 +3,8 @@ import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { canUserBid } from "@/lib/auction/budget";
 import { DEFAULT_STARTING_BID, SQUAD_LIMIT } from "@/lib/auction/constants";
-import { getBidTimerSeconds, isMarketLocked } from "@/lib/auction/close";
+import { isMarketLocked } from "@/lib/auction/close";
+import { getMarketWindowEnd, secondsUntilMarketWindowEnd } from "@/lib/auction/listings";
 import { setAuctionEnd } from "@/lib/timerStore";
 import { consumeOneShotEffect, getActiveEffects, getPriceTrap } from "@/lib/cards/effects";
 import { emitToRoom } from "@/lib/socket-emit";
@@ -70,8 +71,8 @@ export async function POST(
     });
     if (!bidCheck.ok) return apiError(bidCheck.reason ?? "Cannot start auction");
 
-    const timerSeconds = getBidTimerSeconds(room.settings);
-    const endsAt = new Date(Date.now() + timerSeconds * 1000);
+    const endsAt = getMarketWindowEnd();
+    const timerSeconds = secondsUntilMarketWindowEnd();
 
     const starter = await prisma.user.findUnique({
       where: { id: session.userId },
