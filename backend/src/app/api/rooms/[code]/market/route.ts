@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getAvailableBudget, getCommittedBudget, getSquadCount } from "@/lib/auction/budget";
 import { SQUAD_LIMIT } from "@/lib/auction/constants";
 import { getCatalogFilterOptions } from "@/lib/players/catalog-filters";
-import { getLeagueLookup } from "@/lib/players/seed";
+import { ensureFullCatalog, getLeagueLookup } from "@/lib/players/seed";
 import { getActiveEffects, getBlacklists } from "@/lib/cards/effects";
 import { apiError, apiSuccess } from "@/lib/api";
 
@@ -48,6 +48,8 @@ export async function GET(
 
     if (!room) return apiError("Room not found");
     if (room.id !== session.roomId) return apiError("Wrong room");
+
+    await ensureFullCatalog(room.id);
 
     const [availablePlayersRaw, activeAuctions, user, availableBudget, committedBudget, squadCount] =
       await Promise.all([

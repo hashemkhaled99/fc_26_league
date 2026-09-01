@@ -109,3 +109,46 @@ export async function seedPlayersForRoom(
 
   return pool.length;
 }
+
+/** Add any catalog players missing from a room (e.g. after deploying full data file). */
+export async function ensureFullCatalog(roomId: string): Promise<number> {
+  const pool = getGoldPlayerPool();
+  if (pool.length <= FALLBACK_POOL.length) return 0;
+
+  const { prisma } = await import("@/lib/prisma");
+
+  const existing = await prisma.player.findMany({
+    where: { roomId, isIcon: false, isHero: false },
+    select: { name: true, realTeam: true },
+  });
+
+  const existingKeys = new Set(
+    existing.map((p) => `${p.name.toLowerCase()}|${p.realTeam.toLowerCase()}`)
+  );
+
+  const missing = pool.filter(
+    (p) => !existingKeys.has(`${p.name.toLowerCase()}|${p.realTeam.toLowerCase()}`)
+  );
+
+  if (missing.length === 0) return 0;
+
+  const CHUNK = 200;
+  for (let i = 0; i < missing.length; i += CHUNK) {
+    const slice = missing.slice(i, i + CHUNK);
+    await prisma.player.createMany({
+      data: slice.map((p) => ({
+        roomId,
+        name: p.name,
+        realTeam: p.realTeam,
+        league: p.league ?? null,
+        position: p.position,
+        baseRating: p.baseRating,
+        marketValue: p.marketValue,
+        status: "available",
+        isIcon: false,
+      })),
+    });
+  }
+
+  return missing.length;
+}

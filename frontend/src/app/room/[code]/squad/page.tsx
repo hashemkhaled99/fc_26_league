@@ -384,7 +384,7 @@ export default function SquadPage() {
             <div>
               <h2 className="font-display text-2xl font-bold">Your Squad</h2>
               <p className="text-sm text-fc-muted mt-1">
-                Pick a formation · drag players onto slots · tap a card for Bench / Sell
+                Pick a formation · drag players on desktop · on mobile tap a player then tap a slot
               </p>
             </div>
             <div className="flex gap-6 text-right">
