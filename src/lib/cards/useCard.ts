@@ -694,7 +694,10 @@ export async function useCard(input: UseCardInput) {
 
   await prisma.card.update({
     where: { id: card.id },
-    data: { used: true, metadata: { ...(card.metadata as object), result } },
+    data: {
+      used: true,
+      metadata: { ...(card.metadata as object), result } as Prisma.InputJsonValue,
+    },
   });
 
   return result;
