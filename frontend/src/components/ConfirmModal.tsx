@@ -28,16 +28,18 @@ export function ConfirmModal({
     <AnimatePresence>
       <motion.div
         key="confirm-modal"
-        initial={reduced ? false : modalBackdrop.hidden}
-        animate={modalBackdrop.show}
-        exit={reduced ? undefined : modalBackdrop.hidden}
+        variants={modalBackdrop}
+        initial={reduced ? false : "hidden"}
+        animate="show"
+        exit={reduced ? undefined : "hidden"}
         className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
         onClick={onCancel}
       >
         <motion.div
-          initial={reduced ? false : modalPanel.hidden}
-          animate={modalPanel.show}
-          exit={reduced ? undefined : modalPanel.hidden}
+          variants={modalPanel}
+          initial={reduced ? false : "hidden"}
+          animate="show"
+          exit={reduced ? undefined : "hidden"}
           transition={{ type: "spring", stiffness: 400, damping: 28 }}
           className="fc-card w-full max-w-md p-6 shadow-glow"
           onClick={(e) => e.stopPropagation()}
