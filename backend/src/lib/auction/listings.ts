@@ -83,6 +83,8 @@ export async function syncActiveAuctionWindows(roomId: string): Promise<number> 
   let count = 0;
   for (const a of auctions) {
     if (a.endsAt.getTime() === windowEnd.getTime()) continue;
+    // Keep snipe extensions that pushed the deadline past the shared window end.
+    if (a.endsAt.getTime() > windowEnd.getTime()) continue;
     await prisma.auction.update({ where: { id: a.id }, data: { endsAt: windowEnd } });
     await setAuctionEnd(a.id, windowEnd);
     count++;
