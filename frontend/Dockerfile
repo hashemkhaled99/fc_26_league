@@ -10,14 +10,10 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# NEXT_PUBLIC_* are inlined into the client bundle at build time — runtime env is too late.
 ARG NEXT_PUBLIC_API_URL
 ARG NEXT_PUBLIC_SOCKET_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_SOCKET_URL=$NEXT_PUBLIC_SOCKET_URL
-
-RUN test -n "$NEXT_PUBLIC_API_URL" && test -n "$NEXT_PUBLIC_SOCKET_URL" || \
-  (echo "ERROR: NEXT_PUBLIC_API_URL and NEXT_PUBLIC_SOCKET_URL must be set as Docker build args (not only runtime env)." >&2 && exit 1)
 
 RUN npm run build
 

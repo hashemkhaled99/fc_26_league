@@ -1,0 +1,14 @@
+{
+  "/_not-found/page": "app/_not-found/page.js",
+  "/page": "app/page.js",
+  "/room/[code]/admin/page": "app/room/[code]/admin/page.js",
+  "/room/[code]/cards/page": "app/room/[code]/cards/page.js",
+  "/room/[code]/icon-boxes/page": "app/room/[code]/icon-boxes/page.js",
+  "/room/[code]/awards/page": "app/room/[code]/awards/page.js",
+  "/room/[code]/league/page": "app/room/[code]/league/page.js",
+  "/room/[code]/lobby/page": "app/room/[code]/lobby/page.js",
+  "/room/[code]/hero-boxes/page": "app/room/[code]/hero-boxes/page.js",
+  "/room/[code]/market/page": "app/room/[code]/market/page.js",
+  "/room/[code]/trades/page": "app/room/[code]/trades/page.js",
+  "/room/[code]/squad/page": "app/room/[code]/squad/page.js"
+}
