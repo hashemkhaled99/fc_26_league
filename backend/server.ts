@@ -138,7 +138,7 @@ async function main() {
         take: 20,
       });
 
-      const expiredIds = [...new Set([...memoryExpired, ...dbExpired.map((a) => a.id)])];
+      const expiredIds = Array.from(new Set([...memoryExpired, ...dbExpired.map((a) => a.id)]));
 
       for (const auctionId of expiredIds) {
         const result = await closeAuction(auctionId);

@@ -168,19 +168,19 @@ export default function MarketPage() {
   const teams = useMemo(() => {
     if (!data) return [];
     if (data.filterOptions?.teams?.length) return data.filterOptions.teams;
-    return [...new Set(data.availablePlayers.map((p) => p.realTeam).filter(Boolean))].sort();
+    return Array.from(new Set(data.availablePlayers.map((p) => p.realTeam).filter(Boolean))).sort();
   }, [data]);
 
   const leagues = useMemo(() => {
     if (!data) return [];
     if (data.filterOptions?.leagues?.length) return data.filterOptions.leagues;
-    return [
-      ...new Set(
+    return Array.from(
+      new Set(
         data.availablePlayers
           .map((p) => p.league)
           .filter((l): l is string => Boolean(l))
-      ),
-    ].sort();
+      )
+    ).sort();
   }, [data]);
 
   const filteredPlayers = useMemo(() => {
