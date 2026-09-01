@@ -119,3 +119,24 @@ No code changes required; just set `REDIS_URL`.
 | `/frontend` | Next.js UI (standalone) |
 
 Root-level `server/` and `src/app/api/` remain for local monolith dev (`npm run dev` at repo root).
+
+---
+
+## Troubleshooting — backend build failures
+
+| Error in `RUN npm run build` | Fix |
+|------------------------------|-----|
+| `Please manually install OpenSSL` | Fixed in Dockerfile — ensure latest commit (`apk add openssl`) |
+| `Cannot find module 'framer-motion'` | Frontend-only file in `backend/src/lib/` — run `npm run check:lib` locally |
+| `Type error` in `useCard.ts` / `effects.ts` | Prisma JSON types — ensure latest commit |
+| `Cannot find module '../src/lib/...'` in Docker | Import paths must be `./src/lib/...` from `server.ts` |
+
+**Backend `/backend` uses Next.js for API routes only** — `.next` in the Dockerfile is expected. UI is in `/frontend`.
+
+Before pushing backend changes locally:
+
+```bash
+cd backend
+npm run check:lib
+npm run build
+```
