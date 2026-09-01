@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { Countdown } from "./Countdown";
-import { formatMoney, formatMoneyFull } from "@/lib/utils";
+import { formatMoney } from "@/lib/utils";
 import { MIN_BID_INCREMENT } from "@/lib/auction/constants";
 
 interface Player {
@@ -49,18 +49,33 @@ export function AuctionCard({
 }: AuctionCardProps) {
   const reduced = useReducedMotion();
   const [bidding, setBidding] = useState(false);
+  const [bidError, setBidError] = useState("");
   const isFirstBid = !auction.currentBidderId;
   const minBid = isFirstBid
     ? auction.currentBid
     : auction.currentBid + MIN_BID_INCREMENT;
+  const minBidM = Math.ceil(minBid / 1_000_000);
+  const [bidM, setBidM] = useState(minBidM);
   const isHighest = auction.currentBidderId === currentUserId;
   const isOwnResale = Boolean(auction.isResale && auction.sellerId === currentUserId);
   const canBid = !locked && !isHighest && !isOwnResale;
 
+  useEffect(() => {
+    setBidM(minBidM);
+    setBidError("");
+  }, [auction.id, auction.currentBid, minBidM]);
+
   async function handleBid() {
+    const amount = bidM * 1_000_000;
+    if (amount < minBid) {
+      setBidError(`Minimum bid is ${formatMoney(minBid)}`);
+      return;
+    }
+
     setBidding(true);
+    setBidError("");
     try {
-      await onBid(auction.id, minBid);
+      await onBid(auction.id, amount);
     } finally {
       setBidding(false);
     }
@@ -130,18 +145,35 @@ export function AuctionCard({
             Market locked
           </p>
         ) : canBid ? (
-          <motion.button
-            whileTap={reduced ? undefined : { scale: 0.97 }}
-            onClick={handleBid}
-            disabled={bidding}
-            className="fc-btn-primary w-full mt-4 text-sm"
-          >
-            {bidding
-              ? "Bidding..."
-              : isFirstBid
-                ? `Bid ${formatMoney(minBid)}`
-                : `Bid ${formatMoney(minBid)} (+${formatMoneyFull(MIN_BID_INCREMENT)})`}
-          </motion.button>
+          <div className="mt-4 space-y-2">
+            <label className="block text-sm">
+              <span className="text-fc-muted text-xs uppercase">Your bid (millions)</span>
+              <input
+                type="number"
+                min={minBidM}
+                step={1}
+                className="fc-input mt-1 font-mono"
+                value={bidM}
+                onChange={(e) => {
+                  setBidM(Number(e.target.value));
+                  setBidError("");
+                }}
+              />
+            </label>
+            <p className="text-xs text-fc-muted">
+              Minimum {formatMoney(minBid)}
+              {!isFirstBid && ` · must beat current bid by at least ${formatMoney(MIN_BID_INCREMENT)}`}
+            </p>
+            {bidError && <p className="text-xs text-red-400">{bidError}</p>}
+            <motion.button
+              whileTap={reduced ? undefined : { scale: 0.97 }}
+              onClick={handleBid}
+              disabled={bidding}
+              className="fc-btn-primary w-full text-sm"
+            >
+              {bidding ? "Bidding..." : `Bid ${formatMoney(bidM * 1_000_000)}`}
+            </motion.button>
+          </div>
         ) : (
           <motion.p
             initial={reduced ? false : { scale: 0.95 }}
