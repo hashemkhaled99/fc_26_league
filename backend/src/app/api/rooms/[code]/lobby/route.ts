@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
+import { apiError } from "@/lib/api";
 
 export async function GET(
   _request: Request,
@@ -10,7 +11,7 @@ export async function GET(
   const code = params.code.toUpperCase();
 
   if (!session.userId || session.roomCode !== code) {
-    return NextResponse.redirect(new URL("/", process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"));
+    return apiError("Not authenticated for this room", 401);
   }
 
   const room = await prisma.room.findUnique({
@@ -31,7 +32,7 @@ export async function GET(
   });
 
   if (!room) {
-    return NextResponse.redirect(new URL("/", process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"));
+    return apiError("Room not found", 404);
   }
 
   const currentUser = room.users.find((u) => u.id === session.userId);

@@ -15,7 +15,7 @@ ARG NEXT_PUBLIC_SOCKET_URL=https://p01--fc26-backend--xxwmmwbgfpdk.code.run
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_SOCKET_URL=$NEXT_PUBLIC_SOCKET_URL
 
-RUN echo "Busting build cache: v1.0.5" && \
+RUN echo "Busting build cache: v1.0.6" && \
     export NEXT_PUBLIC_API_URL="${NEXT_PUBLIC_API_URL:-https://p01--fc26-backend--xxwmmwbgfpdk.code.run}" && \
     export NEXT_PUBLIC_SOCKET_URL="${NEXT_PUBLIC_SOCKET_URL:-https://p01--fc26-backend--xxwmmwbgfpdk.code.run}" && \
     echo "NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL" && \

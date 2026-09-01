@@ -27,13 +27,8 @@ function resolveApiUrl(): string {
     return DEV_BACKEND;
   }
 
-  if (value && isLocalhostUrl(value)) {
-    console.warn(
-      "[fc26] NEXT_PUBLIC_API_URL points at localhost in production; using deployed backend URL instead.",
-    );
-  }
-
-  return PROD_BACKEND;
+  // Production: same-origin /api/* proxied to backend via next.config rewrites.
+  return "";
 }
 
 function resolveSocketUrl(): string {
@@ -59,7 +54,7 @@ function resolveSocketUrl(): string {
   return PROD_BACKEND;
 }
 
-/** Backend API base URL (inlined at build time via NEXT_PUBLIC_API_URL). */
+/** Backend API base URL (empty in prod = same-origin via Next.js rewrite proxy). */
 export function getPublicApiUrl(): string {
   return resolveApiUrl();
 }

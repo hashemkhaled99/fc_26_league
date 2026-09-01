@@ -2,7 +2,7 @@
 
 import { apiPath, apiFetchInit } from "@/lib/api-base";
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { LoadingPulse } from "@/components/LoadingPulse";
 import { RoomLayoutShell } from "@/components/RoomLayoutShell";
@@ -36,6 +36,7 @@ interface LobbyData {
 
 export default function LobbyPage() {
   const params = useParams();
+  const router = useRouter();
   const code = (params.code as string).toUpperCase();
   const [data, setData] = useState<LobbyData | null>(null);
   const [error, setError] = useState("");
@@ -44,12 +45,16 @@ export default function LobbyPage() {
   useEffect(() => {
     fetch(apiPath(`/api/rooms/${code}/lobby`), apiFetchInit)
       .then((r) => {
+        if (r.status === 401) {
+          router.replace("/");
+          throw new Error("Session expired");
+        }
         if (!r.ok) throw new Error("Failed to load lobby");
         return r.json();
       })
       .then(setData)
       .catch((e) => setError(e.message));
-  }, [code]);
+  }, [code, router]);
 
   useEffect(() => {
     const socketUrl = getPublicSocketUrl();

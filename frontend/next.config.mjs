@@ -8,18 +8,30 @@ function normalizeUrl(value) {
   return trimmed.replace(/\/+$/, "");
 }
 
-const apiUrl =
-  normalizeUrl(process.env.NEXT_PUBLIC_API_URL) || PROD_BACKEND_URL;
+// Backend URL for server-side API proxy rewrites (not exposed to browser).
+const backendProxyUrl =
+  normalizeUrl(process.env.BACKEND_PROXY_URL) ||
+  normalizeUrl(process.env.NEXT_PUBLIC_API_URL) ||
+  PROD_BACKEND_URL;
+
 const socketUrl =
-  normalizeUrl(process.env.NEXT_PUBLIC_SOCKET_URL) || apiUrl;
+  normalizeUrl(process.env.NEXT_PUBLIC_SOCKET_URL) || backendProxyUrl;
 
 const nextConfig = {
   reactStrictMode: true,
   output: "standalone",
-  // Explicitly inject into the client bundle at build time (Docker-friendly).
+  // API calls use same-origin relative URLs; Next proxies /api/* to the backend.
   env: {
-    NEXT_PUBLIC_API_URL: apiUrl,
+    NEXT_PUBLIC_API_URL: "",
     NEXT_PUBLIC_SOCKET_URL: socketUrl,
+  },
+  async rewrites() {
+    return [
+      {
+        source: "/api/:path*",
+        destination: `${backendProxyUrl}/api/:path*`,
+      },
+    ];
   },
 };
 
