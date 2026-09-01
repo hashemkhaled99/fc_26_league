@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 
+function normalizeOrigin(value: string): string {
+  return value.trim().replace(/\/+$/, "");
+}
+
 function corsHeaders(origin: string | null): HeadersInit {
-  const allowed = process.env.FRONTEND_URL ?? "http://localhost:3000";
-  const allowOrigin = origin === allowed ? origin : allowed;
+  const allowed = normalizeOrigin(process.env.FRONTEND_URL ?? "http://localhost:3000");
+  const requestOrigin = origin ? normalizeOrigin(origin) : null;
+  const allowOrigin = requestOrigin === allowed ? origin! : allowed;
 
   return {
     "Access-Control-Allow-Origin": allowOrigin,

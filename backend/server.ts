@@ -15,7 +15,10 @@ if (!process.env.DATABASE_URL && process.env.NEXT_PHASE !== "phase-production-bu
   process.exit(1);
 }
 
-const frontendOrigin = process.env.FRONTEND_URL ?? "http://localhost:3000";
+const frontendOrigin = (process.env.FRONTEND_URL ?? "http://localhost:3000")
+  .trim()
+  .replace(/\/+$/, "");
+console.log(`CORS allowed origin: ${frontendOrigin}`);
 const nextApp = next({ dev, hostname: "0.0.0.0", port: PORT });
 const handle = nextApp.getRequestHandler();
 
