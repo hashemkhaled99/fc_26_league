@@ -4,15 +4,15 @@ FROM node:20-alpine AS deps
 RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
 COPY package.json package-lock.json* ./
-ENV NODE_ENV=development
-RUN npm install
+# Install devDependencies (typescript, prisma CLI) without forcing NODE_ENV=development
+RUN npm install --include=dev
 
 FROM node:20-alpine AS builder
 RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
-ENV NODE_ENV=development
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
 FROM node:20-alpine AS runner
