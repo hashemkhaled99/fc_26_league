@@ -7,6 +7,14 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { GlowCard } from "@/components/GlowCard";
 
 type Mode = "choose" | "create" | "join";
+type JoinKind = "new" | "rejoin";
+type RejoinBy = "displayName" | "teamName";
+
+function roomEntryPath(code: string, phase?: string) {
+  if (phase === "bidding") return `/room/${code}/market`;
+  if (phase === "league" || phase === "season_end") return `/room/${code}/league`;
+  return `/room/${code}/lobby`;
+}
 
 const FEATURES = [
   { icon: "⚡", text: "Live auction bidding" },
@@ -26,6 +34,9 @@ export default function HomePage() {
   const [displayName, setDisplayName] = useState("");
   const [teamName, setTeamName] = useState("");
   const [pin, setPin] = useState("");
+  const [joinKind, setJoinKind] = useState<JoinKind>("new");
+  const [rejoinBy, setRejoinBy] = useState<RejoinBy>("displayName");
+  const [rejoinName, setRejoinName] = useState("");
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -58,20 +69,31 @@ export default function HomePage() {
     setLoading(true);
     setError("");
     try {
+      const body =
+        joinKind === "rejoin"
+          ? {
+              mode: "rejoin" as const,
+              code,
+              rejoinBy,
+              name: rejoinName,
+              pin: pin || undefined,
+            }
+          : {
+              code,
+              displayName,
+              teamName,
+              pin: pin || undefined,
+            };
+
       const res = await fetch(apiPath("/api/rooms/join"), {
         ...apiFetchInit,
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          code,
-          displayName,
-          teamName,
-          pin: pin || undefined,
-        }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to join room");
-      router.push(`/room/${data.code}/lobby`);
+      router.push(roomEntryPath(data.code, data.phase));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
@@ -240,23 +262,99 @@ export default function HomePage() {
                     onChange={(e) => setCode(e.target.value.toUpperCase())}
                     required
                   />
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setJoinKind("new")}
+                      className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                        joinKind === "new"
+                          ? "border-fc-gold/60 bg-fc-gold/10 text-fc-gold"
+                          : "border-white/10 text-fc-muted hover:border-white/20"
+                      }`}
+                    >
+                      New player
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setJoinKind("rejoin")}
+                      className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                        joinKind === "rejoin"
+                          ? "border-fc-gold/60 bg-fc-gold/10 text-fc-gold"
+                          : "border-white/10 text-fc-muted hover:border-white/20"
+                      }`}
+                    >
+                      Re-join
+                    </button>
+                  </div>
+
+                  {joinKind === "new" ? (
+                    <>
+                      <input
+                        className="fc-input"
+                        placeholder="Your display name"
+                        value={displayName}
+                        onChange={(e) => setDisplayName(e.target.value)}
+                        required
+                      />
+                      <input
+                        className="fc-input"
+                        placeholder="Your team name"
+                        value={teamName}
+                        onChange={(e) => setTeamName(e.target.value)}
+                        required
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-xs text-fc-muted">
+                        Enter the name you used when you first joined this room.
+                      </p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setRejoinBy("displayName")}
+                          className={`rounded-lg border px-3 py-2 text-sm transition ${
+                            rejoinBy === "displayName"
+                              ? "border-fc-accent/60 bg-fc-accent/10 text-white"
+                              : "border-white/10 text-fc-muted hover:border-white/20"
+                          }`}
+                        >
+                          Display name
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setRejoinBy("teamName")}
+                          className={`rounded-lg border px-3 py-2 text-sm transition ${
+                            rejoinBy === "teamName"
+                              ? "border-fc-accent/60 bg-fc-accent/10 text-white"
+                              : "border-white/10 text-fc-muted hover:border-white/20"
+                          }`}
+                        >
+                          Team name
+                        </button>
+                      </div>
+                      <input
+                        className="fc-input"
+                        placeholder={
+                          rejoinBy === "displayName"
+                            ? "Your display name"
+                            : "Your team name"
+                        }
+                        value={rejoinName}
+                        onChange={(e) => setRejoinName(e.target.value)}
+                        required
+                      />
+                    </>
+                  )}
+
                   <input
                     className="fc-input"
-                    placeholder="Your display name"
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    required
-                  />
-                  <input
-                    className="fc-input"
-                    placeholder="Your team name"
-                    value={teamName}
-                    onChange={(e) => setTeamName(e.target.value)}
-                    required
-                  />
-                  <input
-                    className="fc-input"
-                    placeholder="PIN (optional)"
+                    placeholder={
+                      joinKind === "rejoin"
+                        ? "PIN (required if you set one)"
+                        : "PIN (optional)"
+                    }
                     value={pin}
                     onChange={(e) => setPin(e.target.value)}
                     minLength={4}
@@ -284,7 +382,13 @@ export default function HomePage() {
                       disabled={loading}
                       className="fc-btn-primary flex-1"
                     >
-                      {loading ? "Joining..." : "Join"}
+                      {loading
+                        ? joinKind === "rejoin"
+                          ? "Re-joining..."
+                          : "Joining..."
+                        : joinKind === "rejoin"
+                          ? "Re-join"
+                          : "Join"}
                     </button>
                   </div>
                 </form>

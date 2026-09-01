@@ -8,6 +8,7 @@ import { StartBiddingButton } from "@/components/StartBiddingButton";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { CARD_TYPES } from "@/lib/cards/types";
 import { formatMoney } from "@/lib/utils";
+import { bidTimerSecondsToHours, hoursToBidTimerSeconds } from "@/lib/format-duration";
 
 interface AdminUser {
   id: string;
@@ -620,26 +621,35 @@ export function AdminDashboard({ code }: { code: string }) {
               </span>
             </label>
             <label className="block text-sm">
-              <span className="text-fc-muted text-xs uppercase">Bid timer (seconds)</span>
+              <span className="text-fc-muted text-xs uppercase">Bid timer (hours)</span>
               <input
                 type="number"
+                min={0.01}
+                max={12}
+                step={0.25}
                 className="fc-input mt-1"
-                value={settings.bidTimerSeconds}
+                value={bidTimerSecondsToHours(settings.bidTimerSeconds)}
                 onChange={(e) =>
-                  setSettings({ ...settings, bidTimerSeconds: Number(e.target.value) })
+                  setSettings({
+                    ...settings,
+                    bidTimerSeconds: hoursToBidTimerSeconds(Number(e.target.value)),
+                  })
                 }
               />
             </label>
             <label className="block text-sm">
-              <span className="text-fc-muted text-xs uppercase">Deadline bid timer (sec)</span>
+              <span className="text-fc-muted text-xs uppercase">Deadline bid timer (hours)</span>
               <input
                 type="number"
+                min={0.01}
+                max={12}
+                step={0.25}
                 className="fc-input mt-1"
-                value={settings.deadlineBidTimerSeconds}
+                value={bidTimerSecondsToHours(settings.deadlineBidTimerSeconds)}
                 onChange={(e) =>
                   setSettings({
                     ...settings,
-                    deadlineBidTimerSeconds: Number(e.target.value),
+                    deadlineBidTimerSeconds: hoursToBidTimerSeconds(Number(e.target.value)),
                   })
                 }
               />

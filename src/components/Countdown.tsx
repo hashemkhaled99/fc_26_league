@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
+import { formatDurationSeconds } from "@/lib/format-duration";
 
 interface CountdownProps {
   endsAt: string;
@@ -25,7 +26,7 @@ export function Countdown({ endsAt, onExpire, urgentThreshold = 10 }: CountdownP
   }, [endsAt, onExpire]);
 
   const urgent = secondsLeft <= urgentThreshold && secondsLeft > 0;
-  const critical = secondsLeft <= 30 && secondsLeft > 0;
+  const critical = secondsLeft <= 300 && secondsLeft > 0;
 
   return (
     <div className="relative flex items-center justify-center">
@@ -51,7 +52,7 @@ export function Countdown({ endsAt, onExpire, urgentThreshold = 10 }: CountdownP
                 : "text-fc-gold"
         }`}
       >
-        {secondsLeft}s
+        {formatDurationSeconds(secondsLeft)}
       </motion.span>
     </div>
   );

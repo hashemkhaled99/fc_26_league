@@ -7,11 +7,12 @@ import {
 } from "@/lib/admin/users";
 import { emitToRoom } from "@/lib/socket-emit";
 import { apiError, apiSuccess } from "@/lib/api";
+import { MAX_BID_TIMER_SECONDS } from "@/lib/auction/constants";
 
 const settingsSchema = z.object({
   startingBudget: z.number().int().min(1_000_000).optional(),
-  bidTimerSeconds: z.number().int().min(5).max(600).optional(),
-  deadlineBidTimerSeconds: z.number().int().min(5).max(300).optional(),
+  bidTimerSeconds: z.number().int().min(5).max(MAX_BID_TIMER_SECONDS).optional(),
+  deadlineBidTimerSeconds: z.number().int().min(5).max(MAX_BID_TIMER_SECONDS).optional(),
   deadlineDayEnabled: z.boolean().optional(),
   deadlineStartsAt: z.string().nullable().optional(),
   deadlineEndsAt: z.string().nullable().optional(),
