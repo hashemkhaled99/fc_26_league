@@ -12,6 +12,7 @@ import { ResaleModal } from "@/components/ResaleModal";
 import { formatMoney } from "@/lib/utils";
 import type { FormationId } from "@/lib/formations";
 import { onBudgetUpdated } from "@/lib/room-socket";
+import { getPublicSocketUrl } from "@/lib/public-env";
 
 interface SquadData {
   room: { code: string; name: string; phase: string };
@@ -125,7 +126,7 @@ export default function SquadPage() {
 
   // Stable socket — do not reconnect when data/formation changes
   useEffect(() => {
-    const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL ?? "http://localhost:3001";
+    const socketUrl = getPublicSocketUrl();
     let socket: { disconnect: () => void } | null = null;
 
     import("socket.io-client").then(({ io }) => {

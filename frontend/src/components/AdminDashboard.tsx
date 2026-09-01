@@ -9,6 +9,7 @@ import { StartBiddingButton } from "@/components/StartBiddingButton";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { CARD_TYPES } from "@/lib/cards/types";
 import { formatMoney } from "@/lib/utils";
+import { getPublicSocketUrl } from "@/lib/public-env";
 
 interface AdminUser {
   id: string;
@@ -151,7 +152,7 @@ export function AdminDashboard({ code }: { code: string }) {
   }, [load]);
 
   useEffect(() => {
-    const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL ?? "http://localhost:3001";
+    const socketUrl = getPublicSocketUrl();
     let active = true;
     import("socket.io-client").then(({ io }) => {
       if (!active) return;

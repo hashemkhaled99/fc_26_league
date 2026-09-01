@@ -10,6 +10,7 @@ import { GlowCard } from "@/components/GlowCard";
 import { formatMoney } from "@/lib/utils";
 import { StartBiddingButton } from "@/components/StartBiddingButton";
 import { onBudgetUpdated } from "@/lib/room-socket";
+import { getPublicSocketUrl } from "@/lib/public-env";
 import Link from "next/link";
 
 interface LobbyUser {
@@ -51,7 +52,7 @@ export default function LobbyPage() {
   }, [code]);
 
   useEffect(() => {
-    const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL ?? "http://localhost:3001";
+    const socketUrl = getPublicSocketUrl();
     import("socket.io-client").then(({ io }) => {
       const socket = io(socketUrl, { transports: ["websocket", "polling"] });
       socket.on("connect", () => {

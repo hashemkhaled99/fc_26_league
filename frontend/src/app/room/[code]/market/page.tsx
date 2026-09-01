@@ -18,6 +18,7 @@ import {
 import { DeadlineBanner } from "@/components/DeadlineBanner";
 import { DealTicker } from "@/components/DealTicker";
 import { onBudgetUpdated } from "@/lib/room-socket";
+import { getPublicSocketUrl } from "@/lib/public-env";
 import { formatMoney } from "@/lib/utils";
 
 interface MarketData {
@@ -118,7 +119,7 @@ export default function MarketPage() {
   }, [loadMarket]);
 
   useEffect(() => {
-    const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL ?? "http://localhost:3001";
+    const socketUrl = getPublicSocketUrl();
     import("socket.io-client").then(({ io }) => {
       const socket = io(socketUrl, { transports: ["websocket", "polling"] });
       socket.on("connect", () => {

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { RoomLayoutShell } from "@/components/RoomLayoutShell";
 import { GlowCard } from "@/components/GlowCard";
 import { onBudgetUpdated } from "@/lib/room-socket";
+import { getPublicSocketUrl } from "@/lib/public-env";
 
 interface Standing {
   userId: string;
@@ -65,7 +66,7 @@ export function LeagueClient({ code }: { code: string }) {
   }, [load]);
 
   useEffect(() => {
-    const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL ?? "http://localhost:3001";
+    const socketUrl = getPublicSocketUrl();
     import("socket.io-client").then(({ io }) => {
       const socket = io(socketUrl, { transports: ["websocket", "polling"] });
       socket.on("connect", () => socket.emit("room:join", { roomCode: code }));
