@@ -3,6 +3,7 @@
 import { motion, useReducedMotion } from "framer-motion";
 import { DEFAULT_STARTING_BID } from "@/lib/auction/constants";
 import { formatMoney } from "@/lib/utils";
+import { Countdown } from "./Countdown";
 
 interface Player {
   id: string;
@@ -11,11 +12,13 @@ interface Player {
   position: string;
   baseRating: number;
   marketValue: number;
+  listingEndsAt?: string | null;
 }
 
 interface PlayerCardProps {
   player: Player;
   onRequestBid: (playerId: string) => void;
+  onListingExpire?: () => void;
   loading?: boolean;
   index?: number;
 }
@@ -35,7 +38,7 @@ const POSITION_COLORS: Record<string, string> = {
   ST: "from-red-600 to-red-800",
 };
 
-export function PlayerCard({ player, onRequestBid, loading, index = 0 }: PlayerCardProps) {
+export function PlayerCard({ player, onRequestBid, onListingExpire, loading, index = 0 }: PlayerCardProps) {
   const reduced = useReducedMotion();
   const gradient = POSITION_COLORS[player.position] ?? "from-fc-card to-fc-charcoal";
 
@@ -59,19 +62,29 @@ export function PlayerCard({ player, onRequestBid, loading, index = 0 }: PlayerC
           <p className="text-xs text-white/75 truncate">{player.realTeam}</p>
         </div>
       </div>
-      <div className="p-3 flex items-center justify-between gap-2">
-        <span className="text-fc-green font-mono text-sm font-semibold">
-          {formatMoney(DEFAULT_STARTING_BID)}
-        </span>
-        <motion.button
-          whileTap={reduced ? undefined : { scale: 0.95 }}
-          onClick={() => onRequestBid(player.id)}
-          disabled={loading}
-          className="rounded-lg bg-fc-gold/20 text-fc-gold text-xs font-bold px-3 py-1.5
-            hover:bg-fc-gold hover:text-fc-navy transition-colors disabled:opacity-50"
-        >
-          Request Bid
-        </motion.button>
+      <div className="p-3 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-fc-green font-mono text-sm font-semibold">
+            {formatMoney(DEFAULT_STARTING_BID)}
+          </span>
+          <motion.button
+            whileTap={reduced ? undefined : { scale: 0.95 }}
+            onClick={() => onRequestBid(player.id)}
+            disabled={loading}
+            className="rounded-lg bg-fc-gold/20 text-fc-gold text-xs font-bold px-3 py-1.5
+              hover:bg-fc-gold hover:text-fc-navy transition-colors disabled:opacity-50"
+          >
+            Request Bid
+          </motion.button>
+        </div>
+        {player.listingEndsAt && (
+          <div className="flex items-center justify-between gap-2 rounded-lg bg-fc-charcoal/60 px-2 py-1.5 border border-white/5">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-fc-muted">
+              Listing
+            </span>
+            <Countdown endsAt={player.listingEndsAt} onExpire={onListingExpire} />
+          </div>
+        )}
       </div>
     </motion.div>
   );

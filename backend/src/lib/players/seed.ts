@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import { nextListingEndsAt } from "@/lib/auction/listings";
 
 export type SeedPlayer = {
   eaId?: string;
@@ -88,6 +89,7 @@ export async function seedPlayersForRoom(
   if (existing > 0) return existing;
 
   const pool = getGoldPlayerPool(options);
+  const listingEndsAt = nextListingEndsAt();
 
   const CHUNK = 200;
   for (let i = 0; i < pool.length; i += CHUNK) {
@@ -102,6 +104,7 @@ export async function seedPlayersForRoom(
         baseRating: p.baseRating,
         marketValue: p.marketValue,
         status: "available",
+        listingEndsAt,
         isIcon: false,
       })),
     });
@@ -132,6 +135,7 @@ export async function ensureFullCatalog(roomId: string): Promise<number> {
 
   if (missing.length === 0) return 0;
 
+  const listingEndsAt = nextListingEndsAt();
   const CHUNK = 200;
   for (let i = 0; i < missing.length; i += CHUNK) {
     const slice = missing.slice(i, i + CHUNK);
@@ -145,6 +149,7 @@ export async function ensureFullCatalog(roomId: string): Promise<number> {
         baseRating: p.baseRating,
         marketValue: p.marketValue,
         status: "available",
+        listingEndsAt,
         isIcon: false,
       })),
     });

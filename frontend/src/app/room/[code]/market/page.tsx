@@ -55,6 +55,7 @@ interface MarketData {
     position: string;
     baseRating: number;
     marketValue: number;
+    listingEndsAt?: string | null;
   }>;
   activeAuctions: Array<{
     id: string;
@@ -455,6 +456,7 @@ export default function MarketPage() {
                       index={i}
                       player={player}
                       onRequestBid={handleRequestBid}
+                      onListingExpire={() => loadMarket().then(setData)}
                       loading={loadingBid}
                     />
                   ))}

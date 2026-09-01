@@ -7,8 +7,12 @@ export const BID_RATE_LIMIT_MS = 500;
 /** Maximum auction timer duration (12 hours). Stored in DB as seconds. */
 export const MAX_BID_TIMER_SECONDS = 12 * 60 * 60;
 
-/** When a bid is placed with this many seconds or less remaining, extend the timer. */
-export const BID_EXTEND_THRESHOLD_SEC = 30;
+/** How long an available (unauctioned) player stays listed before auto re-listing. */
+export const LISTING_DURATION_SECONDS = MAX_BID_TIMER_SECONDS;
+
+/** Only extend the auction clock when this many seconds or less remain. */
+export const BID_EXTEND_THRESHOLD_SEC = 60;
+/** Seconds added per bid during the final minute. */
 export const BID_EXTEND_BY_SEC = 30;
 
 export const POSITIONS = [

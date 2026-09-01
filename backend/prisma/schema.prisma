@@ -84,6 +84,8 @@ model Player {
   boostedStats  Json?
   marketValue   Int
   status        String   @default("available")
+  /// When this listing window ends (available players only). Resets for another 12h if no auction starts.
+  listingEndsAt DateTime?
   isIcon        Boolean  @default(false)
   isHero        Boolean  @default(false)
   squadEntry    SquadPlayer?

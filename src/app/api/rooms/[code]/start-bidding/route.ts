@@ -2,6 +2,7 @@ import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { seedPlayersForRoom } from "@/lib/players/seed";
 import { distributeTransferCards } from "@/lib/cards/distribute";
+import { initializeAvailableListings } from "@/lib/auction/listings";
 import { emitToRoom } from "@/lib/socket-emit";
 import { apiError, apiSuccess } from "@/lib/api";
 
@@ -29,6 +30,7 @@ export async function POST(
   }
 
   const playerCount = await seedPlayersForRoom(room.id);
+  await initializeAvailableListings(room.id);
 
   await prisma.room.update({
     where: { id: room.id },

@@ -135,7 +135,7 @@ export async function POST(request: Request) {
     const endsAt =
       remainingSec <= BID_EXTEND_THRESHOLD_SEC
         ? new Date(auction.endsAt.getTime() + BID_EXTEND_BY_SEC * 1000)
-        : new Date(Date.now() + timerSeconds * 1000);
+        : auction.endsAt;
     const expectedBid = auction.currentBid;
 
     const updateResult = await prisma.auction.updateMany({

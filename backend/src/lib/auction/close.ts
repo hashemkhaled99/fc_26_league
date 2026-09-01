@@ -2,6 +2,7 @@ import type { RoomSettings } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { clearAuctionEnd } from "@/lib/timerStore";
 import { canUserWinAuction } from "./budget";
+import { nextListingEndsAt } from "./listings";
 
 export function getBidTimerSeconds(settings: RoomSettings | null, now = new Date()): number {
   if (!settings) return 60;
@@ -75,7 +76,7 @@ async function returnResaleToSeller(auction: {
       }),
       prisma.player.update({
         where: { id: auction.playerId },
-        data: { status: "available" },
+        data: { status: "available", listingEndsAt: nextListingEndsAt() },
       }),
     ]);
   }

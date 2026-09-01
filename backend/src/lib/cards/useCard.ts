@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { SQUAD_LIMIT, DEFAULT_STARTING_BID } from "@/lib/auction/constants";
 import { getCommittedBudget } from "@/lib/auction/budget";
 import { getBidTimerSeconds } from "@/lib/auction/close";
+import { nextListingEndsAt } from "@/lib/auction/listings";
 import { setAuctionEnd } from "@/lib/timerStore";
 import { ensureIconPool } from "@/lib/icons/generate";
 import { CARD_BY_KEY, pickWeightedCardKeys, DEFAULT_TRANSFER_CARD_KEYS } from "./types";
@@ -397,7 +398,7 @@ export async function useCard(input: UseCardInput) {
         await tx.squadPlayer.delete({ where: { id: entry.id } });
         await tx.player.update({
           where: { id: entry.playerId },
-          data: { status: "available" },
+          data: { status: "available", listingEndsAt: nextListingEndsAt() },
         });
         await tx.user.update({
           where: { id: input.userId },
