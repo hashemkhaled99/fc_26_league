@@ -34,7 +34,7 @@ async function handleHealth(res: ServerResponse) {
   let redis: boolean | undefined;
 
   try {
-    const { prisma } = await import("./src/lib/prisma");
+    const { prisma } = await import("../src/lib/prisma");
     await prisma.$queryRaw`SELECT 1`;
     db = true;
   } catch {
@@ -42,7 +42,7 @@ async function handleHealth(res: ServerResponse) {
   }
 
   if (process.env.REDIS_URL) {
-    const { pingRedis } = await import("./src/lib/timerStore");
+    const { pingRedis } = await import("../src/lib/timerStore");
     redis = await pingRedis();
   }
 
@@ -126,9 +126,9 @@ async function main() {
 
   async function runAuctionCloser() {
     try {
-      const { getExpiredAuctionIds, clearAuctionEnd } = await import("./src/lib/timerStore");
-      const { closeAuction } = await import("./src/lib/auction/close");
-      const { prisma } = await import("./src/lib/prisma");
+      const { getExpiredAuctionIds, clearAuctionEnd } = await import("../src/lib/timerStore");
+      const { closeAuction } = await import("../src/lib/auction/close");
+      const { prisma } = await import("../src/lib/prisma");
 
       const memoryExpired = await getExpiredAuctionIds();
       const dbExpired = await prisma.auction.findMany({
@@ -162,8 +162,8 @@ async function main() {
 
   async function runTransferWindowWatcher() {
     try {
-      const { prisma } = await import("./src/lib/prisma");
-      const { forceCloseAllAuctions } = await import("./src/lib/admin/market");
+      const { prisma } = await import("../src/lib/prisma");
+      const { forceCloseAllAuctions } = await import("../src/lib/admin/market");
 
       const due = await prisma.roomSettings.findMany({
         where: {

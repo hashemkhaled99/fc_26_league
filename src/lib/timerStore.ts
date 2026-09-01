@@ -11,7 +11,7 @@ const memoryExpiry = new Map<string, number>();
 
 let redis: Redis | null = null;
 
-function useRedis(): boolean {
+function redisConfigured(): boolean {
   return Boolean(process.env.REDIS_URL);
 }
 
@@ -29,7 +29,7 @@ function getRedis(): Redis {
 export async function setAuctionEnd(auctionId: string, endsAt: Date): Promise<void> {
   const ms = endsAt.getTime();
 
-  if (useRedis()) {
+  if (redisConfigured()) {
     await getRedis().zadd(EXPIRE_KEY, ms, auctionId);
     return;
   }
@@ -38,7 +38,7 @@ export async function setAuctionEnd(auctionId: string, endsAt: Date): Promise<vo
 }
 
 export async function getAuctionEnd(auctionId: string): Promise<Date | null> {
-  if (useRedis()) {
+  if (redisConfigured()) {
     const score = await getRedis().zscore(EXPIRE_KEY, auctionId);
     if (score === null) return null;
     return new Date(Number(score));
@@ -49,7 +49,7 @@ export async function getAuctionEnd(auctionId: string): Promise<Date | null> {
 }
 
 export async function clearAuctionEnd(auctionId: string): Promise<void> {
-  if (useRedis()) {
+  if (redisConfigured()) {
     await getRedis().zrem(EXPIRE_KEY, auctionId);
     return;
   }
@@ -59,7 +59,7 @@ export async function clearAuctionEnd(auctionId: string): Promise<void> {
 
 /** Auction IDs whose timer has not yet elapsed. */
 export async function getAllActiveAuctionIds(now = Date.now()): Promise<string[]> {
-  if (useRedis()) {
+  if (redisConfigured()) {
     return getRedis().zrangebyscore(EXPIRE_KEY, now + 1, "+inf");
   }
 
@@ -72,7 +72,7 @@ export async function getAllActiveAuctionIds(now = Date.now()): Promise<string[]
 
 /** Auction IDs whose timer has elapsed (used by the background closer worker). */
 export async function getExpiredAuctionIds(now = Date.now()): Promise<string[]> {
-  if (useRedis()) {
+  if (redisConfigured()) {
     return getRedis().zrangebyscore(EXPIRE_KEY, 0, now);
   }
 
@@ -85,7 +85,7 @@ export async function getExpiredAuctionIds(now = Date.now()): Promise<string[]> 
 
 /** Ping Redis when configured — used by /health. */
 export async function pingRedis(): Promise<boolean> {
-  if (!useRedis()) return false;
+  if (!redisConfigured()) return false;
 
   try {
     const client = getRedis();

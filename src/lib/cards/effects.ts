@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 export async function getActiveEffects(roomId: string, now = new Date()) {
@@ -28,7 +29,7 @@ export async function createEffect(data: {
       playerId: data.playerId ?? null,
       auctionId: data.auctionId ?? null,
       expiresAt: data.expiresAt ?? null,
-      payload: data.payload ?? undefined,
+      payload: data.payload as Prisma.InputJsonValue | undefined,
     },
   });
 }
