@@ -1,0 +1,163 @@
+import { Server } from "socket.io";
+import { createServer, IncomingMessage, ServerResponse } from "http";
+
+const PORT = parseInt(process.env.SOCKET_PORT ?? "3001", 10);
+const CHECK_INTERVAL_MS = 1000;
+
+const httpServer = createServer(handleHttp);
+const io = new Server(httpServer, {
+  cors: {
+    origin: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
+    methods: ["GET", "POST"],
+  },
+});
+
+const roomMembers = new Map<string, Set<string>>();
+
+function readBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (c) => chunks.push(c));
+    req.on("end", () => resolve(Buffer.concat(chunks).toString()));
+    req.on("error", reject);
+  });
+}
+
+async function handleHttp(req: IncomingMessage, res: ServerResponse) {
+  if (req.method === "POST" && req.url === "/internal/emit") {
+    try {
+      const body = JSON.parse(await readBody(req));
+      const { roomCode, event, data } = body;
+      io.to(roomCode.toUpperCase()).emit(event, data);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
+    } catch {
+      res.writeHead(400);
+      res.end("Bad request");
+    }
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/health") {
+    res.writeHead(200);
+    res.end("ok");
+    return;
+  }
+
+  res.writeHead(404);
+  res.end("Not found");
+}
+
+io.on("connection", (socket) => {
+  console.log(`Socket connected: ${socket.id}`);
+
+  socket.on("room:join", ({ roomCode }: { roomCode: string }) => {
+    const code = roomCode.toUpperCase();
+    socket.join(code);
+
+    if (!roomMembers.has(code)) roomMembers.set(code, new Set());
+    roomMembers.get(code)!.add(socket.id);
+
+    socket.emit("room:joined", {
+      roomCode: code,
+      memberCount: roomMembers.get(code)!.size,
+    });
+    io.to(code).emit("lobby:updated", { memberCount: roomMembers.get(code)!.size });
+  });
+
+  socket.on("disconnect", () => {
+    for (const [code, members] of roomMembers.entries()) {
+      if (members.has(socket.id)) {
+        members.delete(socket.id);
+        io.to(code).emit("lobby:updated", { memberCount: members.size });
+      }
+    }
+    console.log(`Socket disconnected: ${socket.id}`);
+  });
+});
+
+/** Close expired auctions — Postgres endsAt is the source of truth */
+async function runAuctionCloser() {
+  try {
+    const { getExpiredAuctionIds, removeAuctionExpiry } = await import("../src/lib/auction/redis");
+    const { closeAuction } = await import("../src/lib/auction/close");
+    const { prisma } = await import("../src/lib/prisma");
+
+    const memoryExpired = await getExpiredAuctionIds();
+    const dbExpired = await prisma.auction.findMany({
+      where: { status: "active", endsAt: { lte: new Date() } },
+      select: { id: true },
+      take: 20,
+    });
+
+    const expiredIds = [...new Set([...memoryExpired, ...dbExpired.map((a) => a.id)])];
+
+    for (const auctionId of expiredIds) {
+      const result = await closeAuction(auctionId);
+      await removeAuctionExpiry(auctionId);
+      if (!result) continue;
+
+      io.to(result.roomCode).emit("auction:closed", result);
+
+      if (result.status === "closed" && result.winnerId) {
+        io.to(result.roomCode).emit("squad:updated", { userId: result.winnerId });
+      }
+      if (result.sellerId) {
+        io.to(result.roomCode).emit("squad:updated", { userId: result.sellerId });
+      }
+    }
+  } catch (err) {
+    console.error("Auction closer error:", err);
+  }
+}
+
+/** When transfer window ends, force-close remaining auctions once */
+const lockedRooms = new Set<string>();
+
+async function runTransferWindowWatcher() {
+  try {
+    const { prisma } = await import("../src/lib/prisma");
+    const { forceCloseAllAuctions } = await import("../src/lib/admin/market");
+
+    const due = await prisma.roomSettings.findMany({
+      where: {
+        transferWindowEndsAt: { lte: new Date() },
+        room: { phase: "bidding" },
+      },
+      include: { room: { select: { id: true, code: true } } },
+      take: 10,
+    });
+
+    const dueIds = new Set(due.map((s) => s.roomId));
+    lockedRooms.forEach((id) => {
+      if (!dueIds.has(id)) lockedRooms.delete(id);
+    });
+
+    for (const s of due) {
+      if (lockedRooms.has(s.roomId)) continue;
+      lockedRooms.add(s.roomId);
+
+      const active = await prisma.auction.count({
+        where: { roomId: s.roomId, status: "active" },
+      });
+      if (active > 0) {
+        await forceCloseAllAuctions(s.roomId, s.room.code);
+      }
+
+      io.to(s.room.code).emit("market:locked", { reason: "window_ended" });
+      io.to(s.room.code).emit("settings:updated", {
+        transferWindowEndsAt: s.transferWindowEndsAt?.toISOString(),
+        marketLocked: true,
+      });
+    }
+  } catch (err) {
+    console.error("Transfer window watcher error:", err);
+  }
+}
+
+setInterval(runAuctionCloser, CHECK_INTERVAL_MS);
+setInterval(runTransferWindowWatcher, 5000);
+
+httpServer.listen(PORT, () => {
+  console.log(`FC26 Socket server running on port ${PORT}`);
+});
