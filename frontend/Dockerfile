@@ -15,6 +15,8 @@ ARG NEXT_PUBLIC_SOCKET_URL=https://p01--fc26-backend--xxwmmwbgfpdk.code.run
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_SOCKET_URL=$NEXT_PUBLIC_SOCKET_URL
 
+RUN echo "Busting build cache: v1.0.1"
+
 RUN npm run build
 
 FROM node:20-alpine AS runner
