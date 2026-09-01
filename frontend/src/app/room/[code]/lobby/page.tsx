@@ -9,6 +9,7 @@ import { RoomLayoutShell } from "@/components/RoomLayoutShell";
 import { GlowCard } from "@/components/GlowCard";
 import { formatMoney } from "@/lib/utils";
 import { StartBiddingButton } from "@/components/StartBiddingButton";
+import { ConfirmModal } from "@/components/ConfirmModal";
 import { onBudgetUpdated } from "@/lib/room-socket";
 import { getPublicSocketUrl } from "@/lib/public-env";
 import Link from "next/link";
@@ -41,17 +42,42 @@ export default function LobbyPage() {
   const [data, setData] = useState<LobbyData | null>(null);
   const [error, setError] = useState("");
   const [connected, setConnected] = useState(false);
+  const [kickTarget, setKickTarget] = useState<LobbyUser | null>(null);
+  const [kicking, setKicking] = useState(false);
+
+  async function loadLobby() {
+    const res = await fetch(apiPath(`/api/rooms/${code}/lobby`), apiFetchInit);
+    if (res.status === 401) {
+      router.replace("/");
+      throw new Error("Session expired");
+    }
+    if (!res.ok) throw new Error("Failed to load lobby");
+    return res.json() as Promise<LobbyData>;
+  }
+
+  async function removePlayer(user: LobbyUser) {
+    setKicking(true);
+    setError("");
+    try {
+      const res = await fetch(apiPath(`/api/rooms/${code}/admin/actions`), {
+        ...apiFetchInit,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "kick_user", userId: user.id }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Failed to remove player");
+      setKickTarget(null);
+      setData(await loadLobby());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to remove player");
+    } finally {
+      setKicking(false);
+    }
+  }
 
   useEffect(() => {
-    fetch(apiPath(`/api/rooms/${code}/lobby`), apiFetchInit)
-      .then((r) => {
-        if (r.status === 401) {
-          router.replace("/");
-          throw new Error("Session expired");
-        }
-        if (!r.ok) throw new Error("Failed to load lobby");
-        return r.json();
-      })
+    loadLobby()
       .then(setData)
       .catch((e) => setError(e.message));
   }, [code, router]);
@@ -66,19 +92,13 @@ export default function LobbyPage() {
       });
       socket.on("disconnect", () => setConnected(false));
       socket.on("lobby:updated", () => {
-        fetch(apiPath(`/api/rooms/${code}/lobby`), apiFetchInit)
-          .then((r) => r.json())
-          .then(setData);
+        loadLobby().then(setData).catch(() => undefined);
       });
       onBudgetUpdated(socket, () => {
-        fetch(apiPath(`/api/rooms/${code}/lobby`), apiFetchInit)
-          .then((r) => r.json())
-          .then(setData);
+        loadLobby().then(setData).catch(() => undefined);
       });
       socket.on("phase:changed", () => {
-        fetch(apiPath(`/api/rooms/${code}/lobby`), apiFetchInit)
-          .then((r) => r.json())
-          .then(setData);
+        loadLobby().then(setData).catch(() => undefined);
       });
       return () => socket.disconnect();
     });
@@ -107,7 +127,24 @@ export default function LobbyPage() {
       budget={currentUser?.budget}
       isAdmin={currentUser?.isAdmin}
     >
+      {kickTarget && (
+        <ConfirmModal
+          title={`Remove ${kickTarget.teamName}?`}
+          message={`This will remove ${kickTarget.displayName} and their squad from the room.`}
+          confirmLabel="Remove"
+          danger
+          loading={kicking}
+          onCancel={() => !kicking && setKickTarget(null)}
+          onConfirm={() => removePlayer(kickTarget)}
+        />
+      )}
+
       <div className="space-y-6">
+        {error && (
+          <p className="rounded-lg border border-red-400/30 bg-red-400/10 px-4 py-2 text-sm text-red-300">
+            {error}
+          </p>
+        )}
         <GlowCard glow="gold">
           <div className="flex items-center justify-between">
             <div>
@@ -174,9 +211,20 @@ export default function LobbyPage() {
                     </span>
                   )}
                 </div>
-                <span className="text-fc-green font-mono text-sm">
-                  {formatMoney(user.budget)}
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className="text-fc-green font-mono text-sm">
+                    {formatMoney(user.budget)}
+                  </span>
+                  {currentUser?.isAdmin && !user.isAdmin && room.phase === "lobby" && (
+                    <button
+                      type="button"
+                      className="rounded-lg border border-red-400/30 px-2.5 py-1 text-xs font-semibold text-red-300 hover:bg-red-400/10"
+                      onClick={() => setKickTarget(user)}
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
               </motion.li>
             ))}
           </ul>
