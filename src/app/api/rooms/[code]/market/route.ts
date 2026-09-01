@@ -109,6 +109,18 @@ export async function GET(
     const bidderMap = Object.fromEntries(bidders.map((b) => [b.id, b]));
     const catalog = getCatalogFilterOptions(true);
 
+    const myBidAgg = await prisma.bid.groupBy({
+      by: ["auctionId"],
+      where: {
+        userId: session.userId,
+        auction: { roomId: room.id, status: "active" },
+      },
+      _max: { amount: true },
+    });
+    const myHighestBidByAuction = Object.fromEntries(
+      myBidAgg.map((row) => [row.auctionId, row._max.amount ?? 0])
+    );
+
     return apiSuccess({
       room: {
         code: room.code,
@@ -142,18 +154,29 @@ export async function GET(
         teams: catalog.teams,
       },
       availablePlayers,
-      activeAuctions: activeAuctions.map((a) => ({
-        id: a.id,
-        playerId: a.playerId,
-        player: a.player,
-        startingPrice: a.startingPrice,
-        currentBid: a.currentBid,
-        currentBidderId: a.currentBidderId,
-        currentBidder: a.currentBidderId ? bidderMap[a.currentBidderId] : null,
-        sellerId: a.sellerId,
-        endsAt: a.endsAt.toISOString(),
-        isResale: a.isResale,
-      })),
+      activeAuctions: activeAuctions.map((a) => {
+        const myHighestBid = myHighestBidByAuction[a.id] ?? null;
+        const myBidStatus = myHighestBid
+          ? a.currentBidderId === session.userId
+            ? ("winning" as const)
+            : ("outbid" as const)
+          : null;
+
+        return {
+          id: a.id,
+          playerId: a.playerId,
+          player: a.player,
+          startingPrice: a.startingPrice,
+          currentBid: a.currentBid,
+          currentBidderId: a.currentBidderId,
+          currentBidder: a.currentBidderId ? bidderMap[a.currentBidderId] : null,
+          sellerId: a.sellerId,
+          endsAt: a.endsAt.toISOString(),
+          isResale: a.isResale,
+          myHighestBid,
+          myBidStatus,
+        };
+      }),
     });
   } catch (err) {
     console.error("Market API error:", err);

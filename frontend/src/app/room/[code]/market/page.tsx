@@ -73,6 +73,8 @@ interface MarketData {
     endsAt: string;
     isResale: boolean;
     sellerId?: string | null;
+    myHighestBid?: number | null;
+    myBidStatus?: "winning" | "outbid" | null;
   }>;
 }
 
@@ -188,6 +190,16 @@ export default function MarketPage() {
     if (!data) return [];
     return applyMarketFilters(data.availablePlayers, filters);
   }, [data, filters]);
+
+  const myBiddings = useMemo(() => {
+    if (!data) return [];
+    return data.activeAuctions.filter((a) => a.myBidStatus);
+  }, [data]);
+
+  const otherAuctions = useMemo(() => {
+    if (!data) return [];
+    return data.activeAuctions.filter((a) => !a.myBidStatus);
+  }, [data]);
 
   async function handleRequestBid(playerId: string) {
     setLoadingBid(true);
@@ -346,13 +358,52 @@ export default function MarketPage() {
           <p className="text-red-400 text-sm bg-red-400/10 rounded-lg px-4 py-2">{error}</p>
         )}
 
-        {activeAuctions.length > 0 && (
+        {myBiddings.length > 0 && (
           <section>
-            <h2 className="font-display text-xl font-bold text-fc-gold mb-4">
-              🔥 Live Auctions ({activeAuctions.length})
+            <h2 className="font-display text-xl font-bold text-fc-accent mb-4">
+              My Biddings ({myBiddings.length})
             </h2>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {activeAuctions.map((auction, i) => (
+              {myBiddings.map((auction, i) => (
+                <div key={auction.id} className="space-y-2">
+                  {auction.myHighestBid != null && auction.myBidStatus === "outbid" && (
+                    <p className="text-xs text-fc-muted px-1">
+                      Your bid: {formatMoney(auction.myHighestBid)} · Current:{" "}
+                      {formatMoney(auction.currentBid)}
+                    </p>
+                  )}
+                  <div className="relative">
+                    <span
+                      className={`absolute top-3 left-3 z-10 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                        auction.myBidStatus === "winning"
+                          ? "bg-fc-green/20 text-fc-green border border-fc-green/40"
+                          : "bg-orange-500/20 text-orange-300 border border-orange-500/40"
+                      }`}
+                    >
+                      {auction.myBidStatus === "winning" ? "Winning" : "Outbid"}
+                    </span>
+                    <AuctionCard
+                      index={i}
+                      auction={auction}
+                      currentUserId={user.id}
+                      onBid={handleBid}
+                      locked={marketLocked}
+                      onExpire={() => loadMarket().then(setData)}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {otherAuctions.length > 0 && (
+          <section>
+            <h2 className="font-display text-xl font-bold text-fc-gold mb-4">
+              🔥 Live Auctions ({otherAuctions.length})
+            </h2>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {otherAuctions.map((auction, i) => (
                 <AuctionCard
                   key={auction.id}
                   index={i}
@@ -365,6 +416,14 @@ export default function MarketPage() {
               ))}
             </div>
           </section>
+        )}
+
+        {activeAuctions.length === 0 && (
+          <GlowCard>
+            <p className="text-fc-muted text-center py-4">
+              No live auctions right now — start one from the player list below.
+            </p>
+          </GlowCard>
         )}
 
         <section className="space-y-4">
