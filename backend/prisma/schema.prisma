@@ -1,0 +1,216 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Room {
+  id            String   @id @default(cuid())
+  code          String   @unique
+  name          String
+  phase         String   @default("lobby")
+  currentSeason Int      @default(1)
+  settings      RoomSettings?
+  users         User[]
+  players       Player[]
+  auctions      Auction[]
+  trades        TradeRequest[]
+  matches       Match[]
+  cards         Card[]
+  awards        Award[]
+  iconBoxes     IconBox[]
+  marketEffects MarketEffect[]
+  createdAt     DateTime @default(now())
+}
+
+model RoomSettings {
+  id                        String   @id @default(cuid())
+  room                      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId                    String   @unique
+  startingBudget            Int      @default(400000000)
+  bidTimerSeconds           Int      @default(60)
+  deadlineBidTimerSeconds   Int      @default(20)
+  deadlineDayEnabled        Boolean  @default(true)
+  deadlineStartsAt          DateTime?
+  deadlineEndsAt            DateTime?
+  transferWindowEndsAt      DateTime?
+  enabledCardTypes          String[] @default([])
+  streakBonusEnabled        Boolean  @default(true)
+  streakBonusAt3            Int      @default(15000000)
+  streakBonusAt5            Int      @default(30000000)
+  leaguePrizeFirst          Int      @default(50000000)
+  leaguePrizeSecond         Int      @default(25000000)
+  telegramWebhookUrl        String?
+  tradingEnabledDuringLeague Boolean @default(false)
+  allowSquadOverflowForIcons Boolean @default(false)
+}
+
+model User {
+  id                String   @id @default(cuid())
+  room              Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId            String
+  displayName       String
+  teamName          String
+  pin               String?
+  isAdmin           Boolean  @default(false)
+  budget            Int
+  currentStreak     Int      @default(0)
+  currentStreakType String?
+  bestStreakSeason  Int      @default(0)
+  squadPlayers      SquadPlayer[]
+  bids              Bid[]
+  cards             Card[]
+  iconBoxes         IconBox[]
+  homeMatches       Match[]  @relation("home")
+  awayMatches       Match[]  @relation("away")
+  createdAt         DateTime @default(now())
+}
+
+model Player {
+  id            String   @id @default(cuid())
+  room          Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId        String
+  name          String
+  realTeam      String
+  league        String?
+  position      String
+  baseRating    Int
+  boostedRating Int?
+  /// FC face stats raised by bot boost: [{ key, label, bump }] — PAC/SHO… or GK DIV/HAN…
+  boostedStats  Json?
+  marketValue   Int
+  status        String   @default("available")
+  isIcon        Boolean  @default(false)
+  isHero        Boolean  @default(false)
+  squadEntry    SquadPlayer?
+  auctions      Auction[]
+}
+
+model SquadPlayer {
+  id            String  @id @default(cuid())
+  user          User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String
+  player        Player  @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  playerId      String  @unique
+  isStarting    Boolean @default(false)
+  purchasePrice Int
+}
+
+model Auction {
+  id              String   @id @default(cuid())
+  room            Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId          String
+  player          Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  playerId        String
+  startingPrice   Int
+  currentBid      Int
+  currentBidderId String?
+  sellerId        String?  // set on resale — who receives the sale money
+  status          String   @default("active")
+  isResale        Boolean  @default(false)
+  endsAt          DateTime
+  bids            Bid[]
+  createdAt       DateTime @default(now())
+}
+
+model Bid {
+  id        String   @id @default(cuid())
+  auction   Auction  @relation(fields: [auctionId], references: [id], onDelete: Cascade)
+  auctionId String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  amount    Int
+  createdAt DateTime @default(now())
+}
+
+model TradeRequest {
+  id                 String   @id @default(cuid())
+  room               Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId             String
+  fromUserId         String
+  toUserId           String
+  offeredPlayerIds   String[]
+  requestedPlayerIds String[]
+  cashAdjustment     Int      @default(0)
+  status             String   @default("pending")
+  createdAt          DateTime @default(now())
+}
+
+model Match {
+  id            String  @id @default(cuid())
+  room          Room    @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId        String
+  season        Int
+  homeUser      User    @relation("home", fields: [homeUserId], references: [id], onDelete: Cascade)
+  homeUserId    String
+  awayUser      User    @relation("away", fields: [awayUserId], references: [id], onDelete: Cascade)
+  awayUserId    String
+  homeScore     Int?
+  awayScore     Int?
+  status        String  @default("scheduled")
+  reportedById  String?
+  confirmedById String?
+  homeBonusPts  Int     @default(0)
+  awayBonusPts  Int     @default(0)
+}
+
+model Card {
+  id        String   @id @default(cuid())
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId    String
+  owner     User?    @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  ownerId   String?
+  type      String
+  /// "transfer" (market) | "fixture" (league) — 3 fixture cards last the whole league
+  category  String   @default("transfer")
+  used      Boolean  @default(false)
+  metadata  Json?
+  createdAt DateTime @default(now())
+}
+
+model Award {
+  id     String @id @default(cuid())
+  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId String
+  season Int
+  type   String
+  userId String
+  value  String
+}
+
+model IconBox {
+  id                String   @id @default(cuid())
+  room              Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId            String
+  season            Int
+  /// "icon" | "hero"
+  kind              String   @default("icon")
+  boxNumber         Int
+  optionAId         String
+  optionBId         String
+  revealedOptionA   Boolean  @default(false)
+  revealedOptionB   Boolean  @default(false)
+  chosenOptionId    String?
+  status            String   @default("pending")
+  createdAt         DateTime @default(now())
+}
+
+// Timed / pending transfer-card effects applied to the market
+model MarketEffect {
+  id           String    @id @default(cuid())
+  room         Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId       String
+  type         String
+  casterId     String
+  targetUserId String?
+  playerId     String?
+  auctionId    String?
+  expiresAt    DateTime?
+  payload      Json?
+  createdAt    DateTime  @default(now())
+}

@@ -1,0 +1,216 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-fc-navy text-white antialiased;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(245, 197, 24, 0.08) 0%, transparent 55%),
+      radial-gradient(ellipse 60% 40% at 100% 50%, rgba(0, 212, 255, 0.04) 0%, transparent 50%),
+      radial-gradient(ellipse 50% 30% at 0% 80%, rgba(0, 230, 118, 0.03) 0%, transparent 50%);
+  }
+
+  ::selection {
+    @apply bg-fc-gold/30 text-white;
+  }
+}
+
+@layer components {
+  .fc-card {
+    @apply rounded-xl border border-white/10 bg-fc-card/80 backdrop-blur-sm
+      transition-[transform,box-shadow,border-color] duration-300 ease-out;
+  }
+
+  .fc-card-hover:hover {
+    @apply -translate-y-0.5 border-white/20 shadow-lg;
+  }
+
+  .fc-btn-primary {
+    @apply relative overflow-hidden rounded-lg bg-gradient-to-r from-fc-gold to-yellow-500 px-6 py-3 font-bold text-fc-navy
+      transition-all hover:shadow-glow hover:brightness-110 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .fc-btn-primary::after {
+    content: "";
+    @apply absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent;
+    animation: shimmer 3s ease-in-out infinite;
+  }
+
+  .fc-btn-secondary {
+    @apply rounded-lg border border-fc-gold/40 bg-fc-card px-6 py-3 font-semibold text-fc-gold
+      transition-all hover:border-fc-gold hover:bg-fc-gold/10 hover:shadow-[0_0_15px_rgba(245,197,24,0.15)]
+      active:scale-[0.98];
+  }
+
+  .fc-input {
+    @apply w-full rounded-lg border border-white/10 bg-fc-charcoal px-4 py-3 text-white
+      transition-[border-color,box-shadow] duration-200
+      placeholder:text-fc-muted focus:border-fc-gold/50 focus:outline-none focus:ring-2 focus:ring-fc-gold/20;
+  }
+
+  .fc-gradient-text {
+    @apply bg-gradient-to-r from-fc-gold via-yellow-300 to-fc-gold bg-clip-text text-transparent;
+    background-size: 200% auto;
+    animation: gradient-shift 4s ease-in-out infinite;
+  }
+
+  .fc-live-dot {
+    @apply relative inline-flex h-2.5 w-2.5;
+  }
+
+  .fc-live-dot::before {
+    content: "";
+    @apply absolute inset-0 rounded-full bg-fc-green animate-ping opacity-60;
+  }
+
+  .fc-live-dot::after {
+    content: "";
+    @apply relative inline-flex h-2.5 w-2.5 rounded-full bg-fc-green;
+  }
+
+  /* Ambient background orbs — pure CSS, GPU-friendly */
+  .ambient-orb {
+    @apply absolute rounded-full blur-3xl opacity-30;
+    will-change: transform;
+  }
+
+  .ambient-orb-gold {
+    width: 40vw;
+    height: 40vw;
+    max-width: 520px;
+    max-height: 520px;
+    top: -10%;
+    left: 10%;
+    background: radial-gradient(circle, rgba(245, 197, 24, 0.35) 0%, transparent 70%);
+    animation: float-slow 18s ease-in-out infinite;
+  }
+
+  .ambient-orb-accent {
+    width: 35vw;
+    height: 35vw;
+    max-width: 420px;
+    max-height: 420px;
+    top: 40%;
+    right: -5%;
+    background: radial-gradient(circle, rgba(0, 212, 255, 0.2) 0%, transparent 70%);
+    animation: float-slow 22s ease-in-out infinite reverse;
+  }
+
+  .ambient-orb-green {
+    width: 30vw;
+    height: 30vw;
+    max-width: 380px;
+    max-height: 380px;
+    bottom: -5%;
+    left: 20%;
+    background: radial-gradient(circle, rgba(0, 230, 118, 0.15) 0%, transparent 70%);
+    animation: float-slow 20s ease-in-out infinite 2s;
+  }
+
+  .ambient-grid {
+    @apply absolute inset-0 opacity-[0.03];
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.5) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.5) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: radial-gradient(ellipse at center, black 20%, transparent 75%);
+  }
+
+  /* Card shine on hover */
+  .fc-shine {
+    @apply relative overflow-hidden;
+  }
+
+  .fc-shine::before {
+    content: "";
+    @apply pointer-events-none absolute -inset-full z-10 rotate-12 bg-gradient-to-r from-transparent via-white/10 to-transparent opacity-0 transition-opacity duration-300;
+  }
+
+  .fc-shine:hover::before {
+    @apply opacity-100;
+    animation: shine-sweep 0.7s ease-out;
+  }
+
+  /* Dual range slider thumbs share one track */
+  .fc-range {
+    @apply appearance-none bg-transparent pointer-events-none h-8;
+  }
+
+  .fc-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    pointer-events: auto;
+    width: 18px;
+    height: 18px;
+    border-radius: 9999px;
+    background: #f5c518;
+    border: 2px solid #0a0e1a;
+    box-shadow: 0 0 10px rgba(245, 197, 24, 0.45);
+    cursor: pointer;
+    position: relative;
+    z-index: 2;
+  }
+
+  .fc-range::-moz-range-thumb {
+    pointer-events: auto;
+    width: 18px;
+    height: 18px;
+    border-radius: 9999px;
+    background: #f5c518;
+    border: 2px solid #0a0e1a;
+    box-shadow: 0 0 10px rgba(245, 197, 24, 0.45);
+    cursor: pointer;
+  }
+
+  .fc-range::-moz-range-track {
+    background: transparent;
+  }
+}
+
+@layer utilities {
+  .ticker-fade {
+    mask-image: linear-gradient(90deg, transparent, black 8%, black 92%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ambient-orb,
+  .fc-gradient-text,
+  .fc-btn-primary::after {
+    animation: none !important;
+  }
+
+  .fc-card-hover:hover {
+    transform: none;
+  }
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  40%, 100% { transform: translateX(100%); }
+}
+
+@keyframes gradient-shift {
+  0%, 100% { background-position: 0% center; }
+  50% { background-position: 100% center; }
+}
+
+@keyframes float-slow {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(3%, 2%) scale(1.05); }
+  66% { transform: translate(-2%, 4%) scale(0.97); }
+}
+
+@keyframes shine-sweep {
+  from { transform: translateX(-100%) rotate(12deg); }
+  to { transform: translateX(200%) rotate(12deg); }
+}
+
+@keyframes spin-slow {
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 1.2s linear infinite;
+}

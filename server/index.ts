@@ -1,13 +1,14 @@
 import { Server } from "socket.io";
 import { createServer, IncomingMessage, ServerResponse } from "http";
 
-const PORT = parseInt(process.env.SOCKET_PORT ?? "3001", 10);
+const PORT = parseInt(process.env.PORT ?? process.env.SOCKET_PORT ?? "3001", 10);
 const CHECK_INTERVAL_MS = 1000;
+const frontendOrigin = process.env.FRONTEND_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 
 const httpServer = createServer(handleHttp);
 const io = new Server(httpServer, {
   cors: {
-    origin: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
+    origin: frontendOrigin,
     methods: ["GET", "POST"],
   },
 });
@@ -21,6 +22,32 @@ function readBody(req: IncomingMessage): Promise<string> {
     req.on("end", () => resolve(Buffer.concat(chunks).toString()));
     req.on("error", reject);
   });
+}
+
+async function handleHealth(res: ServerResponse) {
+  let db = false;
+  let redis: boolean | undefined;
+
+  try {
+    const { prisma } = await import("../src/lib/prisma");
+    await prisma.$queryRaw`SELECT 1`;
+    db = true;
+  } catch {
+    db = false;
+  }
+
+  if (process.env.REDIS_URL) {
+    const { pingRedis } = await import("../src/lib/timerStore");
+    redis = await pingRedis();
+  }
+
+  const body: Record<string, unknown> = { status: "ok", db };
+  if (process.env.REDIS_URL) {
+    body.redis = redis;
+  }
+
+  res.writeHead(200, { "Content-Type": "application/json" });
+  res.end(JSON.stringify(body));
 }
 
 async function handleHttp(req: IncomingMessage, res: ServerResponse) {
@@ -39,8 +66,7 @@ async function handleHttp(req: IncomingMessage, res: ServerResponse) {
   }
 
   if (req.method === "GET" && req.url === "/health") {
-    res.writeHead(200);
-    res.end("ok");
+    void handleHealth(res);
     return;
   }
 
@@ -79,7 +105,7 @@ io.on("connection", (socket) => {
 /** Close expired auctions — Postgres endsAt is the source of truth */
 async function runAuctionCloser() {
   try {
-    const { getExpiredAuctionIds, removeAuctionExpiry } = await import("../src/lib/auction/redis");
+    const { getExpiredAuctionIds, clearAuctionEnd } = await import("../src/lib/timerStore");
     const { closeAuction } = await import("../src/lib/auction/close");
     const { prisma } = await import("../src/lib/prisma");
 
@@ -94,7 +120,7 @@ async function runAuctionCloser() {
 
     for (const auctionId of expiredIds) {
       const result = await closeAuction(auctionId);
-      await removeAuctionExpiry(auctionId);
+      await clearAuctionEnd(auctionId);
       if (!result) continue;
 
       io.to(result.roomCode).emit("auction:closed", result);

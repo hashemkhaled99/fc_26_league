@@ -1,4 +1,6 @@
-const SOCKET_URL = process.env.SOCKET_INTERNAL_URL ?? "http://localhost:3001";
+const port = process.env.PORT ?? process.env.SOCKET_PORT ?? "3001";
+const SOCKET_URL =
+  process.env.SOCKET_INTERNAL_URL ?? `http://127.0.0.1:${port}`;
 
 export async function emitToRoom(
   roomCode: string,
