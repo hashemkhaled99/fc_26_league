@@ -1,4 +1,4 @@
-import type { RoomSettings } from "@prisma/client";
+import type { RoomSettings, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { clearAuctionEnd, setAuctionEnd } from "@/lib/timerStore";
 import { canUserWinAuction } from "./budget";
@@ -43,6 +43,24 @@ export interface ClosedAuctionResult {
   isResale: boolean;
 }
 
+type Tx = Prisma.TransactionClient;
+
+/** Always replace squad ownership — never hit P2002 from a stale row. */
+async function assignSquadPlayer(
+  tx: Tx,
+  data: { userId: string; playerId: string; purchasePrice: number }
+) {
+  await tx.squadPlayer.deleteMany({ where: { playerId: data.playerId } });
+  await tx.squadPlayer.create({
+    data: {
+      userId: data.userId,
+      playerId: data.playerId,
+      purchasePrice: data.purchasePrice,
+      isStarting: false,
+    },
+  });
+}
+
 async function returnResaleToSeller(auction: {
   id: string;
   playerId: string;
@@ -50,39 +68,27 @@ async function returnResaleToSeller(auction: {
   isResale: boolean;
   currentBid: number;
 }) {
+  // Claim cancel first so concurrent closers cannot double-process.
+  const claimed = await prisma.auction.updateMany({
+    where: { id: auction.id, status: "active" },
+    data: { status: "cancelled" },
+  });
+  if (claimed.count === 0) return;
+
   if (auction.isResale && auction.sellerId) {
     await prisma.$transaction(async (tx) => {
-      await tx.auction.update({
-        where: { id: auction.id },
-        data: { status: "cancelled" },
-      });
       await tx.player.update({
         where: { id: auction.playerId },
         data: { status: "owned" },
       });
-      // Avoid P2002 if a stale squad row still exists for this player.
-      await tx.squadPlayer.upsert({
-        where: { playerId: auction.playerId },
-        create: {
-          userId: auction.sellerId!,
-          playerId: auction.playerId,
-          purchasePrice: auction.currentBid,
-          isStarting: false,
-        },
-        update: {
-          userId: auction.sellerId!,
-          purchasePrice: auction.currentBid,
-          isStarting: false,
-        },
+      await assignSquadPlayer(tx, {
+        userId: auction.sellerId!,
+        playerId: auction.playerId,
+        purchasePrice: auction.currentBid,
       });
     });
   } else {
     await prisma.$transaction(async (tx) => {
-      await tx.auction.update({
-        where: { id: auction.id },
-        data: { status: "cancelled" },
-      });
-      // Player must not remain on a squad while available on the market.
       await tx.squadPlayer.deleteMany({ where: { playerId: auction.playerId } });
       await tx.player.update({
         where: { id: auction.playerId },
@@ -90,6 +96,37 @@ async function returnResaleToSeller(auction: {
       });
     });
   }
+}
+
+/**
+ * Last-resort: stop the auction closer death-loop.
+ * Marks auction cancelled and puts the player back on the market.
+ */
+export async function abandonAuctionToMarket(auctionId: string): Promise<void> {
+  const auction = await prisma.auction.findUnique({
+    where: { id: auctionId },
+    select: { id: true, playerId: true, status: true },
+  });
+  if (!auction) return;
+
+  await clearAuctionEnd(auctionId);
+  if (auction.status === "active") {
+    await prisma.auction.updateMany({
+      where: { id: auctionId, status: "active" },
+      data: { status: "cancelled" },
+    });
+  }
+
+  await prisma.squadPlayer.deleteMany({ where: { playerId: auction.playerId } });
+  await prisma.player.updateMany({
+    where: {
+      id: auction.playerId,
+      status: { in: ["in_auction", "owned", "available"] },
+      isIcon: false,
+      isHero: false,
+    },
+    data: { status: "available", listingEndsAt: getMarketWindowEnd() },
+  });
 }
 
 /** Close an auction — winner gets player, budget deducted, or cancel if no bids */
@@ -182,19 +219,10 @@ export async function closeAuction(auctionId: string): Promise<ClosedAuctionResu
         where: { id: winnerId },
         data: { budget: { decrement: finalBid } },
       });
-      await tx.squadPlayer.upsert({
-        where: { playerId: auction.playerId },
-        create: {
-          userId: winnerId,
-          playerId: auction.playerId,
-          purchasePrice: finalBid,
-          isStarting: false,
-        },
-        update: {
-          userId: winnerId,
-          purchasePrice: finalBid,
-          isStarting: false,
-        },
+      await assignSquadPlayer(tx, {
+        userId: winnerId,
+        playerId: auction.playerId,
+        purchasePrice: finalBid,
       });
       if (auction.isResale && auction.sellerId) {
         await tx.user.update({
@@ -205,25 +233,33 @@ export async function closeAuction(auctionId: string): Promise<ClosedAuctionResu
     });
   } catch (err) {
     console.error(`closeAuction transfer failed for ${auctionId}:`, err);
-    // Auction is already marked closed — ensure player/squad state is consistent.
-    await prisma.squadPlayer.upsert({
-      where: { playerId: auction.playerId },
-      create: {
-        userId: winnerId,
+    try {
+      await prisma.$transaction(async (tx) => {
+        await assignSquadPlayer(tx, {
+          userId: winnerId,
+          playerId: auction.playerId,
+          purchasePrice: finalBid,
+        });
+        await tx.player.update({
+          where: { id: auction.playerId },
+          data: { status: "owned" },
+        });
+      });
+    } catch (err2) {
+      console.error(`closeAuction recovery failed for ${auctionId}:`, err2);
+      // Don't leave an endless active closer loop — release to market.
+      await abandonAuctionToMarket(auctionId);
+      return {
+        auctionId,
+        status: "cancelled",
+        sellerId: auction.sellerId ?? undefined,
         playerId: auction.playerId,
-        purchasePrice: finalBid,
-        isStarting: false,
-      },
-      update: {
-        userId: winnerId,
-        purchasePrice: finalBid,
-        isStarting: false,
-      },
-    });
-    await prisma.player.update({
-      where: { id: auction.playerId },
-      data: { status: "owned" },
-    });
+        playerName: auction.player.name,
+        finalBid,
+        roomCode: auction.room.code,
+        isResale: auction.isResale,
+      };
+    }
   }
 
   // Fee rebate card: refund 10% of winning bid once
@@ -307,7 +343,6 @@ export async function returnAllPlayersToMarket(roomId: string): Promise<{
     refundedBudget += entry.purchasePrice;
   }
 
-  // Also flip any leftover in_auction / owned regular players back to available.
   await prisma.player.updateMany({
     where: {
       roomId,
@@ -318,7 +353,6 @@ export async function returnAllPlayersToMarket(roomId: string): Promise<{
     data: { status: "available", listingEndsAt: endsAt },
   });
 
-  // Ensure no orphan squad rows remain for regular players.
   await prisma.squadPlayer.deleteMany({
     where: {
       user: { roomId },

@@ -128,17 +128,21 @@ async function main() {
     });
   });
 
+  let auctionCloserRunning = false;
+
   async function runAuctionCloser() {
+    if (auctionCloserRunning) return;
+    auctionCloserRunning = true;
     try {
       const { getExpiredAuctionIds, clearAuctionEnd } = await import("./src/lib/timerStore");
-      const { closeAuction } = await import("./src/lib/auction/close");
+      const { closeAuction, abandonAuctionToMarket } = await import("./src/lib/auction/close");
       const { prisma } = await import("./src/lib/prisma");
 
       const memoryExpired = await getExpiredAuctionIds();
       const dbExpired = await prisma.auction.findMany({
         where: { status: "active", endsAt: { lte: new Date() } },
         select: { id: true },
-        take: 20,
+        take: 5,
       });
 
       const expiredIds = Array.from(new Set([...memoryExpired, ...dbExpired.map((a) => a.id)]));
@@ -159,15 +163,19 @@ async function main() {
           }
         } catch (err) {
           console.error(`Auction closer error for ${auctionId}:`, err);
+          // Stop infinite retry loops that exhaust the DB pool (P2002 / P2024).
           try {
+            await abandonAuctionToMarket(auctionId);
             await clearAuctionEnd(auctionId);
-          } catch {
-            /* ignore */
+          } catch (abandonErr) {
+            console.error(`Failed to abandon auction ${auctionId}:`, abandonErr);
           }
         }
       }
     } catch (err) {
       console.error("Auction closer error:", err);
+    } finally {
+      auctionCloserRunning = false;
     }
   }
 
