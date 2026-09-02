@@ -93,6 +93,9 @@ model Player {
   squadEntry    SquadPlayer?
   auctions      Auction[]
   loans         Loan[]
+
+  @@index([roomId, status, isIcon, isHero])
+  @@index([roomId, isIcon, isHero])
 }
 
 model SquadPlayer {
@@ -120,6 +123,10 @@ model Auction {
   endsAt          DateTime
   bids            Bid[]
   createdAt       DateTime @default(now())
+
+  @@index([roomId, status, endsAt])
+  @@index([playerId, status])
+  @@index([status, currentBidderId])
 }
 
 model Bid {

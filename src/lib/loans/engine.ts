@@ -22,13 +22,15 @@ export async function getLoanedOutPlayerIds(lenderId: string): Promise<Set<strin
 }
 
 export async function getEffectiveSquadCount(userId: string): Promise<number> {
-  const owned = await prisma.squadPlayer.count({ where: { userId } });
-  const loanedOut = await prisma.loan.count({
-    where: { lenderId: userId, status: "active" },
-  });
-  const loanedIn = await prisma.loan.count({
-    where: { borrowerId: userId, status: "active" },
-  });
+  const [owned, loanedOut, loanedIn] = await Promise.all([
+    prisma.squadPlayer.count({ where: { userId } }),
+    prisma.loan.count({
+      where: { lenderId: userId, status: "active" },
+    }),
+    prisma.loan.count({
+      where: { borrowerId: userId, status: "active" },
+    }),
+  ]);
   return owned - loanedOut + loanedIn;
 }
 

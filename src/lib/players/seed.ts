@@ -79,6 +79,9 @@ const FALLBACK_POOL: SeedPlayer[] = [
   { name: "Courtois", realTeam: "Real Madrid", position: "GK", baseRating: 89, marketValue: 28000000 },
 ];
 
+/** Rooms already verified to have a full catalog — skip heavy scan on every market load. */
+const catalogReadyRooms = new Set<string>();
+
 export async function seedPlayersForRoom(
   roomId: string,
   options?: { menOnly?: boolean }
@@ -111,4 +114,67 @@ export async function seedPlayersForRoom(
   }
 
   return pool.length;
+}
+
+/** Add any catalog players missing from a room (e.g. after deploying full data file). */
+export async function ensureFullCatalog(roomId: string): Promise<number> {
+  if (catalogReadyRooms.has(roomId)) return 0;
+
+  const pool = getGoldPlayerPool();
+  if (pool.length <= FALLBACK_POOL.length) {
+    catalogReadyRooms.add(roomId);
+    return 0;
+  }
+
+  const { prisma } = await import("@/lib/prisma");
+
+  // Fast path: if the room already has a full-size catalog, skip the name scan.
+  const existingCount = await prisma.player.count({
+    where: { roomId, isIcon: false, isHero: false },
+  });
+  if (existingCount >= pool.length) {
+    catalogReadyRooms.add(roomId);
+    return 0;
+  }
+
+  const existing = await prisma.player.findMany({
+    where: { roomId, isIcon: false, isHero: false },
+    select: { name: true, realTeam: true },
+  });
+
+  const existingKeys = new Set(
+    existing.map((p) => `${p.name.toLowerCase()}|${p.realTeam.toLowerCase()}`)
+  );
+
+  const missing = pool.filter(
+    (p) => !existingKeys.has(`${p.name.toLowerCase()}|${p.realTeam.toLowerCase()}`)
+  );
+
+  if (missing.length === 0) {
+    catalogReadyRooms.add(roomId);
+    return 0;
+  }
+
+  const listingEndsAt = nextListingEndsAt();
+  const CHUNK = 200;
+  for (let i = 0; i < missing.length; i += CHUNK) {
+    const slice = missing.slice(i, i + CHUNK);
+    await prisma.player.createMany({
+      data: slice.map((p) => ({
+        roomId,
+        name: p.name,
+        realTeam: p.realTeam,
+        league: p.league ?? null,
+        position: p.position,
+        baseRating: p.baseRating,
+        marketValue: p.marketValue,
+        status: "available",
+        listingEndsAt,
+        isIcon: false,
+      })),
+    });
+  }
+
+  catalogReadyRooms.add(roomId);
+  return missing.length;
 }

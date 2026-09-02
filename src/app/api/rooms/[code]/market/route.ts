@@ -1,16 +1,11 @@
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
-import { getAvailableBudget, getCommittedBudget, getSquadCount } from "@/lib/auction/budget";
+import { getCommittedBudget, getSquadCount } from "@/lib/auction/budget";
 import { SQUAD_LIMIT } from "@/lib/auction/constants";
 import { getCatalogFilterOptions } from "@/lib/players/catalog-filters";
-import { getLeagueLookup } from "@/lib/players/seed";
+import { ensureFullCatalog, getLeagueLookup } from "@/lib/players/seed";
 import { getActiveEffects, getBlacklists } from "@/lib/cards/effects";
-import {
-  syncAvailableListingsToMarketWindow,
-  syncActiveAuctionWindows,
-  syncRoomTransferWindow,
-  getMarketWindowEnd,
-} from "@/lib/auction/listings";
+import { prepareMarketWindow } from "@/lib/auction/listings";
 import { apiError, apiSuccess } from "@/lib/api";
 
 const PLAYER_SELECT = {
@@ -56,63 +51,83 @@ export async function GET(
     if (!room) return apiError("Room not found");
     if (room.id !== session.roomId) return apiError("Wrong room");
 
-    await syncAvailableListingsToMarketWindow(room.id);
-    await syncActiveAuctionWindows(room.id);
-    await syncRoomTransferWindow(room.id);
+    // Catalog check + window sync run in parallel; both are cached after the first warm hit.
+    const [, marketDeadlineAt] = await Promise.all([
+      ensureFullCatalog(room.id),
+      prepareMarketWindow(room.id, room.settings),
+    ]);
 
-    const settings = await prisma.roomSettings.findUnique({ where: { roomId: room.id } });
-    const marketDeadlineAt = getMarketWindowEnd();
+    const settings = room.settings;
     const rebidRoundEnabled = settings?.rebidRoundEnabled ?? false;
-    const transferWindowEndsAt = settings?.transferWindowEndsAt ?? marketDeadlineAt;
+    const transferWindowEndsAt =
+      rebidRoundEnabled
+        ? null
+        : settings?.transferWindowEndsAt &&
+            Math.abs(settings.transferWindowEndsAt.getTime() - marketDeadlineAt.getTime()) <=
+              30 * 60 * 1000
+          ? settings.transferWindowEndsAt
+          : marketDeadlineAt;
 
-    const [availablePlayersRaw, activeAuctions, user, availableBudget, committedBudget, squadCount] =
-      await Promise.all([
-        prisma.player.findMany({
-          where: { roomId: room.id, status: "available", isIcon: false, isHero: false },
-          select: PLAYER_SELECT,
-          orderBy: [{ baseRating: "desc" }, { name: "asc" }],
-        }),
-        prisma.auction.findMany({
-          where: { roomId: room.id, status: "active" },
-          include: {
-            player: { select: PLAYER_SELECT },
-          },
-          orderBy: { endsAt: "asc" },
-        }),
-        prisma.user.findUnique({
-          where: { id: session.userId },
-          select: {
-            id: true,
-            displayName: true,
-            teamName: true,
-            budget: true,
-            isAdmin: true,
-          },
-        }),
-        getAvailableBudget(session.userId),
-        getCommittedBudget(session.userId),
-        getSquadCount(session.userId),
-      ]);
+    const [
+      availablePlayersRaw,
+      activeAuctions,
+      user,
+      committedBudget,
+      squadCount,
+      effects,
+      myBidAgg,
+    ] = await Promise.all([
+      prisma.player.findMany({
+        where: { roomId: room.id, status: "available", isIcon: false, isHero: false },
+        select: PLAYER_SELECT,
+        orderBy: [{ baseRating: "desc" }, { name: "asc" }],
+      }),
+      prisma.auction.findMany({
+        where: { roomId: room.id, status: "active" },
+        include: {
+          player: { select: PLAYER_SELECT },
+        },
+        orderBy: { endsAt: "asc" },
+      }),
+      prisma.user.findUnique({
+        where: { id: session.userId },
+        select: {
+          id: true,
+          displayName: true,
+          teamName: true,
+          budget: true,
+          isAdmin: true,
+        },
+      }),
+      getCommittedBudget(session.userId),
+      getSquadCount(session.userId),
+      getActiveEffects(room.id).catch((effectErr) => {
+        console.warn("Market effects skipped:", effectErr);
+        return [] as Awaited<ReturnType<typeof getActiveEffects>>;
+      }),
+      prisma.bid.groupBy({
+        by: ["auctionId"],
+        where: {
+          userId: session.userId,
+          auction: { roomId: room.id, status: "active" },
+        },
+        _max: { amount: true },
+      }),
+    ]);
 
-    let hidden = new Set<string>();
-    try {
-      const effects = await getActiveEffects(room.id);
-      hidden = new Set(
-        getBlacklists(effects, session.userId)
-          .map((e) => e.playerId)
-          .filter(Boolean) as string[]
-      );
-    } catch (effectErr) {
-      console.warn("Market effects skipped:", effectErr);
-    }
+    const hidden = new Set(
+      getBlacklists(effects, session.userId)
+        .map((e) => e.playerId)
+        .filter(Boolean) as string[]
+    );
 
     const availablePlayers = withCatalogLeagues(
       availablePlayersRaw.filter((p) => !hidden.has(p.id))
     );
 
-    const bidderIds = activeAuctions
-      .map((a) => a.currentBidderId)
-      .filter(Boolean) as string[];
+    const bidderIds = [
+      ...new Set(activeAuctions.map((a) => a.currentBidderId).filter(Boolean) as string[]),
+    ];
 
     const bidders =
       bidderIds.length > 0
@@ -124,18 +139,12 @@ export async function GET(
 
     const bidderMap = Object.fromEntries(bidders.map((b) => [b.id, b]));
     const catalog = getCatalogFilterOptions(true);
-
-    const myBidAgg = await prisma.bid.groupBy({
-      by: ["auctionId"],
-      where: {
-        userId: session.userId,
-        auction: { roomId: room.id, status: "active" },
-      },
-      _max: { amount: true },
-    });
     const myHighestBidByAuction = Object.fromEntries(
       myBidAgg.map((row) => [row.auctionId, row._max.amount ?? 0])
     );
+
+    const budget = user?.budget ?? 0;
+    const availableBudget = budget - committedBudget;
 
     return apiSuccess({
       room: {
@@ -144,24 +153,25 @@ export async function GET(
         phase: room.phase,
       },
       settings: {
-        bidTimerSeconds: settings?.bidTimerSeconds ?? room.settings?.bidTimerSeconds ?? 60,
-        deadlineBidTimerSeconds:
-          settings?.deadlineBidTimerSeconds ?? room.settings?.deadlineBidTimerSeconds ?? 20,
-        deadlineDayEnabled: settings?.deadlineDayEnabled ?? room.settings?.deadlineDayEnabled ?? true,
+        bidTimerSeconds: settings?.bidTimerSeconds ?? 60,
+        deadlineBidTimerSeconds: settings?.deadlineBidTimerSeconds ?? 20,
+        deadlineDayEnabled: settings?.deadlineDayEnabled ?? true,
         deadlineStartsAt: settings?.deadlineStartsAt?.toISOString() ?? null,
         deadlineEndsAt: settings?.deadlineEndsAt?.toISOString() ?? null,
-        transferWindowEndsAt: rebidRoundEnabled ? null : transferWindowEndsAt.toISOString(),
+        transferWindowEndsAt: rebidRoundEnabled
+          ? null
+          : (transferWindowEndsAt?.toISOString() ?? marketDeadlineAt.toISOString()),
         marketDeadlineAt: marketDeadlineAt.toISOString(),
         rebidRoundEnabled,
         marketLocked: rebidRoundEnabled
           ? false
-          : transferWindowEndsAt.getTime() <= Date.now(),
+          : (transferWindowEndsAt?.getTime() ?? marketDeadlineAt.getTime()) <= Date.now(),
       },
       user: {
         id: session.userId,
         displayName: user?.displayName,
         teamName: user?.teamName,
-        budget: user?.budget ?? 0,
+        budget,
         availableBudget,
         committedBudget,
         squadCount,

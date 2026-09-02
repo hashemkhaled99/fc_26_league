@@ -135,12 +135,88 @@ export default function MarketPage() {
       socket.on("disconnect", () => setConnected(false));
 
       socket.on("auction:started", () => loadMarket().then(setData));
-      socket.on("bid:placed", (bid: { playerName: string; amount: number; bidder?: { teamName: string } }) => {
-        loadMarket().then(setData);
-        if (bid.bidder) {
-          setToast(`🔥 ${bid.bidder.teamName} bid ${formatMoney(bid.amount)} on ${bid.playerName}`);
-          setTimeout(() => setToast(null), 4000);
+      socket.on(
+        "bid:placed",
+        (bid: {
+          auctionId?: string;
+          playerName: string;
+          amount: number;
+          currentBid?: number;
+          currentBidderId?: string;
+          endsAt?: string;
+          bidder?: { id: string; displayName: string; teamName: string };
+        }) => {
+          // Patch auction in-place — avoids a full market reload on every bid.
+          if (bid.auctionId) {
+            setData((prev) => {
+              if (!prev) return prev;
+              const myId = prev.user.id;
+              return {
+                ...prev,
+                activeAuctions: prev.activeAuctions.map((a) => {
+                  if (a.id !== bid.auctionId) return a;
+                  const currentBid = bid.currentBid ?? bid.amount;
+                  const currentBidderId = bid.currentBidderId ?? bid.bidder?.id ?? a.currentBidderId;
+                  const myHighestBid =
+                    currentBidderId === myId
+                      ? currentBid
+                      : a.myHighestBid && a.myHighestBid > 0
+                        ? a.myHighestBid
+                        : a.myHighestBid;
+                  const myBidStatus = myHighestBid
+                    ? currentBidderId === myId
+                      ? ("winning" as const)
+                      : ("outbid" as const)
+                    : a.myBidStatus;
+                  return {
+                    ...a,
+                    currentBid,
+                    currentBidderId,
+                    currentBidder: bid.bidder ?? a.currentBidder,
+                    endsAt: bid.endsAt ?? a.endsAt,
+                    myHighestBid: currentBidderId === myId ? currentBid : myHighestBid,
+                    myBidStatus,
+                  };
+                }),
+              };
+            });
+          } else {
+            loadMarket().then(setData);
+          }
+          if (bid.bidder) {
+            setToast(`🔥 ${bid.bidder.teamName} bid ${formatMoney(bid.amount)} on ${bid.playerName}`);
+            setTimeout(() => setToast(null), 4000);
+          }
         }
+      );
+      socket.on("auction:updated", (payload: {
+        auctionId: string;
+        currentBid: number;
+        currentBidderId: string;
+        endsAt: string;
+      }) => {
+        setData((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            activeAuctions: prev.activeAuctions.map((a) =>
+              a.id === payload.auctionId
+                ? {
+                    ...a,
+                    currentBid: payload.currentBid,
+                    currentBidderId: payload.currentBidderId,
+                    endsAt: payload.endsAt,
+                    myBidStatus:
+                      a.myHighestBid
+                        ? payload.currentBidderId === prev.user.id
+                          ? ("winning" as const)
+                          : ("outbid" as const)
+                        : a.myBidStatus,
+                  }
+                : a
+            ),
+          };
+        });
       });
       socket.on("auction:closed", (result: {
         status: string;
