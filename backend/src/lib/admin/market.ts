@@ -11,15 +11,20 @@ export async function forceCloseAllAuctions(roomId: string, roomCode: string) {
 
   const results = [];
   for (const a of active) {
-    const result = await closeAuction(a.id);
-    if (!result) continue;
-    results.push(result);
-    await emitToRoom(roomCode, "auction:closed", result);
-    if (result.winnerId) {
-      await emitToRoom(roomCode, "squad:updated", { userId: result.winnerId });
-    }
-    if (result.sellerId) {
-      await emitToRoom(roomCode, "squad:updated", { userId: result.sellerId });
+    try {
+      const result = await closeAuction(a.id);
+      if (!result) continue;
+      results.push(result);
+      await emitToRoom(roomCode, "auction:closed", result);
+      if (result.winnerId) {
+        await emitToRoom(roomCode, "squad:updated", { userId: result.winnerId });
+      }
+      if (result.sellerId) {
+        await emitToRoom(roomCode, "squad:updated", { userId: result.sellerId });
+      }
+    } catch (err) {
+      console.error(`forceCloseAllAuctions: failed for ${a.id}:`, err);
+      // Leave auction for the periodic closer — do not wipe squads here.
     }
   }
   return results;

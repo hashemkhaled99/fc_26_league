@@ -174,15 +174,18 @@ async function main() {
           const msg = err instanceof Error ? err.message : String(err);
           if (msg.includes("P2024") || msg.includes("Timed out fetching")) {
             // Pool exhausted — back off so API routes (squad/market) can recover.
-            auctionCloserPauseUntil = Date.now() + 30_000;
-            console.error("Auction closer paused 30s due to DB pool pressure");
+            auctionCloserPauseUntil = Date.now() + 60_000;
+            console.error("Auction closer paused 60s due to DB pool pressure");
             break;
           }
+          // Soft abandon: cancel/clear timer without deleting squad ownership.
           try {
             await abandonAuctionToMarket(auctionId);
             await clearAuctionEnd(auctionId);
           } catch (abandonErr) {
             console.error(`Failed to abandon auction ${auctionId}:`, abandonErr);
+            auctionCloserPauseUntil = Date.now() + 15_000;
+            break;
           }
         }
       }
@@ -190,7 +193,7 @@ async function main() {
       console.error("Auction closer error:", err);
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes("P2024") || msg.includes("Timed out fetching")) {
-        auctionCloserPauseUntil = Date.now() + 30_000;
+        auctionCloserPauseUntil = Date.now() + 60_000;
       }
     } finally {
       auctionCloserRunning = false;

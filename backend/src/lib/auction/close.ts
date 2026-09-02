@@ -99,34 +99,137 @@ async function returnResaleToSeller(auction: {
 }
 
 /**
- * Last-resort: stop the auction closer death-loop.
- * Marks auction cancelled and puts the player back on the market.
+ * Last-resort: stop the auction closer death-loop without wiping squads.
+ * - If already closed with a winner: ensure squad ownership (never dump to market).
+ * - If active: cancel only.
+ * - Never delete an existing SquadPlayer row.
+ * - Only list orphan in_auction players (no squad row) as available.
  */
 export async function abandonAuctionToMarket(auctionId: string): Promise<void> {
   const auction = await prisma.auction.findUnique({
     where: { id: auctionId },
-    select: { id: true, playerId: true, status: true },
+    select: {
+      id: true,
+      playerId: true,
+      status: true,
+      currentBidderId: true,
+      currentBid: true,
+    },
   });
   if (!auction) return;
 
   await clearAuctionEnd(auctionId);
+
+  // Closed-with-winner: repair ownership, never strip the squad.
+  if (auction.status === "closed" && auction.currentBidderId) {
+    try {
+      await prisma.$transaction(async (tx) => {
+        await assignSquadPlayer(tx, {
+          userId: auction.currentBidderId!,
+          playerId: auction.playerId,
+          purchasePrice: auction.currentBid,
+        });
+        await tx.player.update({
+          where: { id: auction.playerId },
+          data: { status: "owned", listingEndsAt: null },
+        });
+      });
+    } catch (err) {
+      console.error(`abandon: ensure ownership failed for ${auctionId}:`, err);
+    }
+    return;
+  }
+
   if (auction.status === "active") {
     await prisma.auction.updateMany({
-      where: { id: auctionId, status: "active" },
+      where: { id: auction.id, status: "active" },
       data: { status: "cancelled" },
     });
   }
 
-  await prisma.squadPlayer.deleteMany({ where: { playerId: auction.playerId } });
+  const existing = await prisma.squadPlayer.findFirst({
+    where: { playerId: auction.playerId },
+    select: { id: true },
+  });
+  if (existing) {
+    await prisma.player.updateMany({
+      where: { id: auction.playerId },
+      data: { status: "owned", listingEndsAt: null },
+    });
+    return;
+  }
+
   await prisma.player.updateMany({
     where: {
       id: auction.playerId,
-      status: { in: ["in_auction", "owned", "available"] },
+      status: { in: ["in_auction", "available"] },
       isIcon: false,
       isHero: false,
     },
     data: { status: "available", listingEndsAt: getMarketWindowEnd() },
   });
+}
+
+/**
+ * Repair squads after a bad closer run: for each closed auction with a winner,
+ * ensure the player is owned by that winner (no budget change).
+ */
+export async function restoreSquadsFromClosedAuctions(roomId: string): Promise<{
+  restored: number;
+  alreadyOk: number;
+  checked: number;
+}> {
+  const closed = await prisma.auction.findMany({
+    where: { roomId, status: "closed", currentBidderId: { not: null } },
+    select: {
+      id: true,
+      playerId: true,
+      currentBidderId: true,
+      currentBid: true,
+      updatedAt: true,
+    },
+    orderBy: { updatedAt: "desc" },
+  });
+
+  const latestByPlayer = new Map<string, (typeof closed)[number]>();
+  for (const a of closed) {
+    if (!latestByPlayer.has(a.playerId)) latestByPlayer.set(a.playerId, a);
+  }
+
+  let restored = 0;
+  let alreadyOk = 0;
+
+  for (const a of latestByPlayer.values()) {
+    const winnerId = a.currentBidderId!;
+    const row = await prisma.squadPlayer.findUnique({
+      where: { playerId: a.playerId },
+      select: { userId: true },
+    });
+
+    if (row?.userId === winnerId) {
+      await prisma.player.updateMany({
+        where: { id: a.playerId, status: { not: "owned" } },
+        data: { status: "owned", listingEndsAt: null },
+      });
+      alreadyOk += 1;
+      continue;
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await assignSquadPlayer(tx, {
+        userId: winnerId,
+        playerId: a.playerId,
+        purchasePrice: a.currentBid,
+      });
+      await tx.player.update({
+        where: { id: a.playerId },
+        data: { status: "owned", listingEndsAt: null },
+      });
+    });
+    restored += 1;
+  }
+
+  return { restored, alreadyOk, checked: latestByPlayer.size };
 }
 
 /** Close an auction — winner gets player, budget deducted, or cancel if no bids */
@@ -247,11 +350,13 @@ export async function closeAuction(auctionId: string): Promise<ClosedAuctionResu
       });
     } catch (err2) {
       console.error(`closeAuction recovery failed for ${auctionId}:`, err2);
-      // Don't leave an endless active closer loop — release to market.
-      await abandonAuctionToMarket(auctionId);
+      // Auction is already claimed closed — never dump winner to market.
       return {
         auctionId,
-        status: "cancelled",
+        status: "closed",
+        winnerId,
+        winnerName: winner.displayName,
+        winnerTeam: winner.teamName,
         sellerId: auction.sellerId ?? undefined,
         playerId: auction.playerId,
         playerName: auction.player.name,

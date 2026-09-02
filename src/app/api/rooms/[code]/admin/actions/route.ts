@@ -6,7 +6,11 @@ import {
   lockTransferWindow,
   unlockTransferWindow,
 } from "@/lib/admin/market";
-import { returnAllPlayersToMarket, forceMarketDeadline } from "@/lib/auction/close";
+import {
+  returnAllPlayersToMarket,
+  forceMarketDeadline,
+  restoreSquadsFromClosedAuctions,
+} from "@/lib/auction/close";
 import { notifyBudgetUpdated, setRoomUserBudget } from "@/lib/admin/users";
 import { applyBotBoost } from "@/lib/league/botBoost";
 import { generateIconBoxes, generateHeroBoxes, iconBoxProgress, heroBoxProgress } from "@/lib/icons/generate";
@@ -25,6 +29,7 @@ const schema = z.object({
     "disable_rebid_round",
     "return_all_to_market",
     "force_deadline_930",
+    "restore_squads_from_auctions",
     "complete_squads",
     "generate_icon_boxes",
     "generate_hero_boxes",
@@ -208,6 +213,16 @@ export async function POST(
       return apiSuccess({
         ...result,
         message: `Synced ${result.listings} listings and ${result.auctions} live auctions to 9:45 PM.`,
+      });
+    }
+
+    if (data.action === "restore_squads_from_auctions") {
+      const result = await restoreSquadsFromClosedAuctions(room.id);
+      await emitToRoom(room.code, "market:updated", { reason: "restore_squads" });
+      await emitToRoom(room.code, "lobby:updated", {});
+      return apiSuccess({
+        ...result,
+        message: `Restored ${result.restored} squad players from closed auctions (${result.alreadyOk} already correct, ${result.checked} winners checked).`,
       });
     }
 

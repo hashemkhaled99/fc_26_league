@@ -408,6 +408,21 @@ export function AdminDashboard({ code }: { code: string }) {
                   disabled={busy}
                   onClick={() =>
                     setConfirm({
+                      title: "Restore Squads from Auctions",
+                      message:
+                        "Rebuilds squads from closed auctions (highest bidder wins). Use this if players disappeared after the deadline. Does not change budgets.",
+                      action: "restore_squads_from_auctions",
+                    })
+                  }
+                >
+                  Restore Squads from Closed Auctions
+                </button>
+                <button
+                  type="button"
+                  className="fc-btn-secondary"
+                  disabled={busy}
+                  onClick={() =>
+                    setConfirm({
                       title: "Force Deadline 9:45 PM",
                       message:
                         "Sets every available listing and live auction timer to end at 9:45 PM without clearing squads.",
