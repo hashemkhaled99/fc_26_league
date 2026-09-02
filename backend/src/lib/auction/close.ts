@@ -186,9 +186,9 @@ export async function restoreSquadsFromClosedAuctions(roomId: string): Promise<{
       playerId: true,
       currentBidderId: true,
       currentBid: true,
-      updatedAt: true,
+      endsAt: true,
     },
-    orderBy: { updatedAt: "desc" },
+    orderBy: { endsAt: "desc" },
   });
 
   const latestByPlayer = new Map<string, (typeof closed)[number]>();
