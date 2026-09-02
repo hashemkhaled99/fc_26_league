@@ -687,6 +687,63 @@ export function AdminDashboard({ code }: { code: string }) {
           )}
         </GlowCard>
 
+        {/* Force assign — top of admin so it is not buried under settings */}
+        <GlowCard glow="green">
+          <h2 className="font-display text-lg font-semibold mb-2 text-fc-green">
+            Force Assign Player
+          </h2>
+          <p className="text-sm text-fc-muted mb-4">
+            Move a player onto a manager&apos;s squad (no budget change). Cancels any live auction for
+            that player. Example: <span className="text-fc-gold">Vini</span> →{" "}
+            <span className="text-fc-gold">AboJoToussef</span>.
+          </p>
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-fc-muted uppercase">Player name</span>
+              <input
+                className="fc-input w-48 py-2 text-sm"
+                placeholder="Vini"
+                value={assignPlayerName}
+                onChange={(e) => setAssignPlayerName(e.target.value)}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-fc-muted uppercase">To manager</span>
+              <select
+                className="fc-input w-56 py-2 text-sm"
+                value={assignUserId}
+                onChange={(e) => setAssignUserId(e.target.value)}
+              >
+                <option value="">Select manager…</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.teamName} ({u.displayName})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="fc-btn-primary"
+              disabled={busy || !assignPlayerName.trim() || !assignUserId}
+              onClick={() => {
+                const target = users.find((u) => u.id === assignUserId);
+                setConfirm({
+                  title: "Force assign player?",
+                  message: `Assign "${assignPlayerName.trim()}" to ${target?.teamName ?? "manager"} (${target?.displayName ?? ""}). No money changes hands.`,
+                  action: "force_assign_player",
+                  payload: {
+                    playerName: assignPlayerName.trim(),
+                    userId: assignUserId,
+                  },
+                });
+              }}
+            >
+              Assign
+            </button>
+          </div>
+        </GlowCard>
+
         {/* Settings */}
         <GlowCard>
           <div className="flex items-center justify-between gap-3 mb-4">
@@ -939,61 +996,6 @@ export function AdminDashboard({ code }: { code: string }) {
                 );
               })}
             </div>
-          </div>
-        </GlowCard>
-
-        {/* Force assign player */}
-        <GlowCard>
-          <h2 className="font-display text-lg font-semibold mb-2">Force Assign Player</h2>
-          <p className="text-sm text-fc-muted mb-4">
-            Move a player onto a manager&apos;s squad (no budget change). Cancels any live auction for
-            that player. Use e.g. <span className="text-fc-gold">Vini</span> →{" "}
-            <span className="text-fc-gold">AboJoToussef</span>.
-          </p>
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="text-fc-muted uppercase">Player name</span>
-              <input
-                className="fc-input w-48 py-2 text-sm"
-                placeholder="Vini"
-                value={assignPlayerName}
-                onChange={(e) => setAssignPlayerName(e.target.value)}
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="text-fc-muted uppercase">To manager</span>
-              <select
-                className="fc-input w-56 py-2 text-sm"
-                value={assignUserId}
-                onChange={(e) => setAssignUserId(e.target.value)}
-              >
-                <option value="">Select manager…</option>
-                {users.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.teamName} ({u.displayName})
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              type="button"
-              className="fc-btn-primary"
-              disabled={busy || !assignPlayerName.trim() || !assignUserId}
-              onClick={() => {
-                const target = users.find((u) => u.id === assignUserId);
-                setConfirm({
-                  title: "Force assign player?",
-                  message: `Assign "${assignPlayerName.trim()}" to ${target?.teamName ?? "manager"} (${target?.displayName ?? ""}). No money changes hands.`,
-                  action: "force_assign_player",
-                  payload: {
-                    playerName: assignPlayerName.trim(),
-                    userId: assignUserId,
-                  },
-                });
-              }}
-            >
-              Assign
-            </button>
           </div>
         </GlowCard>
 
