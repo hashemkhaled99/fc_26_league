@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { setAuctionEnd } from "@/lib/timerStore";
 import { MARKET_DEADLINE_HOUR, REBID_TIMER_SECONDS } from "@/lib/auction/constants";
 
 /** Minutes east of UTC for market windows (default UTC+3). Override with LISTING_TZ_OFFSET_MINUTES. */
@@ -10,7 +11,6 @@ function getListingTzOffsetMs(): number {
 /**
  * End of the current market day: next 9:00 PM in the listing timezone.
  * All available players and live auctions share this fixed deadline.
- * Timers are set once and never refreshed on page loads.
  */
 export function getMarketWindowEnd(from = new Date()): Date {
   const offsetMs = getListingTzOffsetMs();
@@ -52,6 +52,13 @@ export function isPastMarketDeadline(now = new Date()): boolean {
   return now.getTime() >= windowEnd.getTime();
 }
 
+/** True when endsAt looks like a stale midnight window rather than a snipe extension. */
+function isStalePastWindowEnd(endsAt: Date, windowEnd: Date): boolean {
+  const overrunMs = endsAt.getTime() - windowEnd.getTime();
+  // Snipe adds +30s per bid; anything >30 min past 9 PM is a stale midnight deadline.
+  return overrunMs > 30 * 60 * 1000;
+}
+
 /** True when the player has never had any auction started on them. */
 export async function isUnbidPlayer(playerId: string): Promise<boolean> {
   const count = await prisma.auction.count({ where: { playerId } });
@@ -73,9 +80,22 @@ export async function initializeAvailableListings(roomId: string): Promise<numbe
   return result.count;
 }
 
-/**
- * Only fill missing listing deadlines — never overwrite an existing fixed deadline.
- */
+/** Align every available player to today's fixed 9 PM window (fixes stale midnight deadlines). */
+export async function syncAvailableListingsToMarketWindow(roomId: string): Promise<number> {
+  const endsAt = getMarketWindowEnd();
+  const result = await prisma.player.updateMany({
+    where: {
+      roomId,
+      status: "available",
+      isIcon: false,
+      isHero: false,
+    },
+    data: { listingEndsAt: endsAt },
+  });
+  return result.count;
+}
+
+/** Only fill players that never received a listing deadline. */
 export async function ensureListingDeadlines(roomId: string): Promise<number> {
   const endsAt = getMarketWindowEnd();
 
@@ -93,12 +113,54 @@ export async function ensureListingDeadlines(roomId: string): Promise<number> {
   return result.count;
 }
 
-/** @deprecated Timers are no longer refreshed on each request. Use ensureListingDeadlines. */
-export async function refreshAvailableListings(roomId: string): Promise<number> {
-  return ensureListingDeadlines(roomId);
+/** Pull stale midnight auction timers back to 9 PM; keep short rebid timers and snipe extensions. */
+export async function syncActiveAuctionWindows(roomId: string): Promise<number> {
+  const now = new Date();
+  const windowEnd = getMarketWindowEnd(now);
+  if (windowEnd.getTime() <= now.getTime()) return 0;
+
+  const auctions = await prisma.auction.findMany({
+    where: { roomId, status: "active", endsAt: { gt: now } },
+    select: { id: true, endsAt: true },
+  });
+
+  let count = 0;
+  for (const a of auctions) {
+    const endsMs = a.endsAt.getTime();
+    const windowMs = windowEnd.getTime();
+
+    if (endsMs === windowMs) continue;
+
+    // Rebid / short timers — leave alone.
+    if (endsMs < windowMs) continue;
+
+    // Snipe extension past 9 PM — leave alone.
+    if (!isStalePastWindowEnd(a.endsAt, windowEnd)) continue;
+
+    await prisma.auction.update({ where: { id: a.id }, data: { endsAt: windowEnd } });
+    await setAuctionEnd(a.id, windowEnd);
+    count++;
+  }
+  return count;
 }
 
-/** @deprecated Active auction timers are no longer synced on each request. */
-export async function syncActiveAuctionWindows(_roomId: string): Promise<number> {
-  return 0;
+/** Fix transfer window if it still points at midnight instead of 9 PM. */
+export async function syncRoomTransferWindow(roomId: string): Promise<boolean> {
+  const settings = await prisma.roomSettings.findUnique({ where: { roomId } });
+  if (!settings || settings.rebidRoundEnabled) return false;
+
+  const windowEnd = getMarketWindowEnd();
+  const current = settings.transferWindowEndsAt;
+  if (current && !isStalePastWindowEnd(current, windowEnd)) return false;
+
+  await prisma.roomSettings.update({
+    where: { roomId },
+    data: { transferWindowEndsAt: windowEnd },
+  });
+  return true;
+}
+
+/** @deprecated Use syncAvailableListingsToMarketWindow */
+export async function refreshAvailableListings(roomId: string): Promise<number> {
+  return syncAvailableListingsToMarketWindow(roomId);
 }

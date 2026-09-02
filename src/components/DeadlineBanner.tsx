@@ -14,16 +14,20 @@ function formatRemaining(ms: number) {
 
 interface DeadlineBannerProps {
   transferWindowEndsAt: string | null;
+  marketDeadlineAt?: string | null;
   deadlineStartsAt?: string | null;
   deadlineDayEnabled?: boolean;
   marketLocked?: boolean;
+  rebidRoundEnabled?: boolean;
 }
 
 export function DeadlineBanner({
   transferWindowEndsAt,
+  marketDeadlineAt,
   deadlineStartsAt,
   deadlineDayEnabled,
   marketLocked,
+  rebidRoundEnabled,
 }: DeadlineBannerProps) {
   const [now, setNow] = useState(Date.now());
 
@@ -31,6 +35,17 @@ export function DeadlineBanner({
     const id = setInterval(() => setNow(Date.now()), 250);
     return () => clearInterval(id);
   }, []);
+
+  if (rebidRoundEnabled) {
+    return (
+      <div className="rounded-xl border border-amber-400/40 bg-amber-500/15 px-4 py-3 text-center">
+        <p className="font-display text-lg font-bold text-amber-200">Rebid Round Active</p>
+        <p className="text-sm text-fc-muted">
+          Un-bid players only · 2-minute auctions · +30s if bid in the last minute
+        </p>
+      </div>
+    );
+  }
 
   if (marketLocked || (transferWindowEndsAt && new Date(transferWindowEndsAt).getTime() <= now)) {
     return (
@@ -41,9 +56,10 @@ export function DeadlineBanner({
     );
   }
 
-  if (!transferWindowEndsAt) return null;
+  const deadlineIso = marketDeadlineAt ?? transferWindowEndsAt;
+  if (!deadlineIso) return null;
 
-  const end = new Date(transferWindowEndsAt).getTime();
+  const end = new Date(deadlineIso).getTime();
   const remaining = end - now;
   const finalFive = remaining > 0 && remaining <= 5 * 60_000;
   const inDeadline =
@@ -71,7 +87,7 @@ export function DeadlineBanner({
               ? "⚠ Final 5 minutes"
               : inDeadline
                 ? "Deadline Day — faster timers"
-                : "Transfer window closes in"}
+                : "Market closes at 9:00 PM — time remaining"}
           </p>
           <p
             className={`font-mono text-3xl font-bold tabular-nums ${

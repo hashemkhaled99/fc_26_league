@@ -386,7 +386,7 @@ export function AdminDashboard({ code }: { code: string }) {
                 >
                   Force Close Market
                 </button>
-                {!settings.rebidRoundEnabled && marketLocked && (
+                {!settings.rebidRoundEnabled && (
                   <button
                     type="button"
                     className="fc-btn-primary"
@@ -395,7 +395,7 @@ export function AdminDashboard({ code }: { code: string }) {
                       setConfirm({
                         title: "Enable Rebid Round",
                         message:
-                          "Opens a second-chance round for players that were never bid on. Anyone can request a bid — each auction gets a fixed 2-minute timer (+30s if bid in the last minute).",
+                          "Opens a second-chance round for players that were never bid on. Anyone can request a bid — each auction gets a fixed 2-minute timer (+30s if bid in the last minute). Best used after the 9 PM deadline or Force Close Market.",
                         action: "enable_rebid_round",
                       })
                     }

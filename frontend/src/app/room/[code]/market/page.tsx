@@ -31,6 +31,8 @@ interface MarketData {
     deadlineStartsAt: string | null;
     deadlineEndsAt: string | null;
     transferWindowEndsAt: string | null;
+    marketDeadlineAt?: string | null;
+    rebidRoundEnabled?: boolean;
     marketLocked: boolean;
   };
   user: {
@@ -320,9 +322,11 @@ export default function MarketPage() {
       <div className="space-y-6">
         <DeadlineBanner
           transferWindowEndsAt={data.settings?.transferWindowEndsAt ?? null}
+          marketDeadlineAt={data.settings?.marketDeadlineAt ?? null}
           deadlineStartsAt={data.settings?.deadlineStartsAt}
           deadlineDayEnabled={data.settings?.deadlineDayEnabled}
           marketLocked={data.settings?.marketLocked}
+          rebidRoundEnabled={data.settings?.rebidRoundEnabled}
         />
 
         <DealTicker roomCode={room.code} liveLine={liveDeal} />

@@ -30,6 +30,7 @@ interface Settings {
   deadlineStartsAt: string | null;
   deadlineEndsAt: string | null;
   transferWindowEndsAt: string | null;
+  rebidRoundEnabled: boolean;
   enabledCardTypes: string[];
   streakBonusEnabled: boolean;
   streakBonusAt3: number;
@@ -135,6 +136,7 @@ export function AdminDashboard({ code }: { code: string }) {
             deadlineStartsAt: null,
             deadlineEndsAt: null,
             transferWindowEndsAt: null,
+            rebidRoundEnabled: false,
             enabledCardTypes: [],
             streakBonusEnabled: true,
             streakBonusAt3: 15000000,
@@ -246,7 +248,8 @@ export function AdminDashboard({ code }: { code: string }) {
     (!heroProgress?.generated || heroProgress.allReady);
   const marketLocked =
     Boolean(settings.transferWindowEndsAt) &&
-    new Date(settings.transferWindowEndsAt!).getTime() <= Date.now();
+    new Date(settings.transferWindowEndsAt!).getTime() <= Date.now() &&
+    !settings.rebidRoundEnabled;
 
   return (
     <RoomLayoutShell
@@ -334,6 +337,15 @@ export function AdminDashboard({ code }: { code: string }) {
             Season {room.currentSeason} · Phase: <span className="text-white">{room.phase}</span>
             {" · "}
             {activeAuctions} live auction{activeAuctions === 1 ? "" : "s"}
+            {room.phase === "bidding" && (
+              <>
+                {" · "}
+                <span className="text-fc-gold">Market deadline: 9:00 PM</span>
+                {settings.rebidRoundEnabled && (
+                  <span className="text-amber-400"> · Rebid round active (2 min timers)</span>
+                )}
+              </>
+            )}
           </p>
 
           <div className="mt-4 flex flex-wrap gap-2">
@@ -370,6 +382,41 @@ export function AdminDashboard({ code }: { code: string }) {
                 >
                   Force Close Market
                 </button>
+                {!settings.rebidRoundEnabled && (
+                  <button
+                    type="button"
+                    className="fc-btn-primary"
+                    disabled={busy}
+                    onClick={() =>
+                      setConfirm({
+                        title: "Enable Rebid Round",
+                        message:
+                          "Opens a second-chance round for players that were never bid on. Anyone can request a bid — each auction gets a fixed 2-minute timer (+30s if bid in the last minute). Best used after the 9 PM deadline or Force Close Market.",
+                        action: "enable_rebid_round",
+                      })
+                    }
+                  >
+                    Enable Rebid Round (2 min)
+                  </button>
+                )}
+                {settings.rebidRoundEnabled && (
+                  <button
+                    type="button"
+                    className="rounded-lg bg-amber-500/90 px-5 py-3 font-bold text-white hover:bg-amber-400"
+                    disabled={busy}
+                    onClick={() =>
+                      setConfirm({
+                        title: "Close Rebid Round",
+                        message:
+                          "Closes the rebid round and locks the market. Any live rebid auctions will stay open until their 2-minute timer ends.",
+                        action: "disable_rebid_round",
+                        danger: true,
+                      })
+                    }
+                  >
+                    Close Rebid Round
+                  </button>
+                )}
                 <button
                   type="button"
                   className="fc-btn-primary"

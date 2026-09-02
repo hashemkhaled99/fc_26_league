@@ -5,7 +5,12 @@ import { SQUAD_LIMIT } from "@/lib/auction/constants";
 import { getCatalogFilterOptions } from "@/lib/players/catalog-filters";
 import { ensureFullCatalog, getLeagueLookup } from "@/lib/players/seed";
 import { getActiveEffects, getBlacklists } from "@/lib/cards/effects";
-import { ensureListingDeadlines } from "@/lib/auction/listings";
+import {
+  syncAvailableListingsToMarketWindow,
+  syncActiveAuctionWindows,
+  syncRoomTransferWindow,
+  getMarketWindowEnd,
+} from "@/lib/auction/listings";
 import { apiError, apiSuccess } from "@/lib/api";
 
 const PLAYER_SELECT = {
@@ -52,7 +57,14 @@ export async function GET(
     if (room.id !== session.roomId) return apiError("Wrong room");
 
     await ensureFullCatalog(room.id);
-    await ensureListingDeadlines(room.id);
+    await syncAvailableListingsToMarketWindow(room.id);
+    await syncActiveAuctionWindows(room.id);
+    await syncRoomTransferWindow(room.id);
+
+    const settings = await prisma.roomSettings.findUnique({ where: { roomId: room.id } });
+    const marketDeadlineAt = getMarketWindowEnd();
+    const rebidRoundEnabled = settings?.rebidRoundEnabled ?? false;
+    const transferWindowEndsAt = settings?.transferWindowEndsAt ?? marketDeadlineAt;
 
     const [availablePlayersRaw, activeAuctions, user, availableBudget, committedBudget, squadCount] =
       await Promise.all([
@@ -133,17 +145,18 @@ export async function GET(
         phase: room.phase,
       },
       settings: {
-        bidTimerSeconds: room.settings?.bidTimerSeconds ?? 60,
-        deadlineBidTimerSeconds: room.settings?.deadlineBidTimerSeconds ?? 20,
-        deadlineDayEnabled: room.settings?.deadlineDayEnabled ?? true,
-        deadlineStartsAt: room.settings?.deadlineStartsAt?.toISOString() ?? null,
-        deadlineEndsAt: room.settings?.deadlineEndsAt?.toISOString() ?? null,
-        transferWindowEndsAt: room.settings?.transferWindowEndsAt?.toISOString() ?? null,
-        rebidRoundEnabled: room.settings?.rebidRoundEnabled ?? false,
-        marketLocked: room.settings?.transferWindowEndsAt
-          ? room.settings.transferWindowEndsAt.getTime() <= Date.now() &&
-            !(room.settings.rebidRoundEnabled ?? false)
-          : false,
+        bidTimerSeconds: settings?.bidTimerSeconds ?? room.settings?.bidTimerSeconds ?? 60,
+        deadlineBidTimerSeconds:
+          settings?.deadlineBidTimerSeconds ?? room.settings?.deadlineBidTimerSeconds ?? 20,
+        deadlineDayEnabled: settings?.deadlineDayEnabled ?? room.settings?.deadlineDayEnabled ?? true,
+        deadlineStartsAt: settings?.deadlineStartsAt?.toISOString() ?? null,
+        deadlineEndsAt: settings?.deadlineEndsAt?.toISOString() ?? null,
+        transferWindowEndsAt: rebidRoundEnabled ? null : transferWindowEndsAt.toISOString(),
+        marketDeadlineAt: marketDeadlineAt.toISOString(),
+        rebidRoundEnabled,
+        marketLocked: rebidRoundEnabled
+          ? false
+          : transferWindowEndsAt.getTime() <= Date.now(),
       },
       user: {
         id: session.userId,
