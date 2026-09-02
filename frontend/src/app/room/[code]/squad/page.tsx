@@ -117,13 +117,34 @@ export default function SquadPage() {
   }, [code]);
 
   useEffect(() => {
+    let cancelled = false;
     const gen = ++loadGen.current;
-    loadSquad()
-      .then((squad) => {
-        if (gen !== loadGen.current) return;
+
+    async function loadWithRetry() {
+      try {
+        const squad = await loadSquad();
+        if (cancelled || gen !== loadGen.current) return;
         applySquad(squad, { refillEmpty: true });
-      })
-      .catch((e) => setError(e.message));
+        setError("");
+      } catch (e) {
+        // One short retry — backend often recovers after pool backoff.
+        await new Promise((r) => setTimeout(r, 1500));
+        if (cancelled || gen !== loadGen.current) return;
+        try {
+          const squad = await loadSquad();
+          if (cancelled || gen !== loadGen.current) return;
+          applySquad(squad, { refillEmpty: true });
+          setError("");
+        } catch (e2) {
+          if (!cancelled) setError(e2 instanceof Error ? e2.message : String(e));
+        }
+      }
+    }
+
+    loadWithRetry();
+    return () => {
+      cancelled = true;
+    };
   }, [loadSquad, applySquad]);
 
   // Stable socket — do not reconnect when data/formation changes
@@ -136,15 +157,19 @@ export default function SquadPage() {
       socket = s;
       s.on("connect", () => s.emit("room:join", { roomCode: code }));
 
+      const refreshTimer = { current: null as ReturnType<typeof setTimeout> | null };
       const refresh = () => {
-        if (busyRef.current) return; // don't fight local drag/edit
-        const gen = ++loadGen.current;
-        loadSquad()
-          .then((squad) => {
-            if (gen !== loadGen.current) return;
-            applySquad(squad, { refillEmpty: false });
-          })
-          .catch(() => undefined);
+        if (busyRef.current) return;
+        if (refreshTimer.current) clearTimeout(refreshTimer.current);
+        refreshTimer.current = setTimeout(() => {
+          const gen = ++loadGen.current;
+          loadSquad()
+            .then((squad) => {
+              if (gen !== loadGen.current) return;
+              applySquad(squad, { refillEmpty: false });
+            })
+            .catch(() => undefined);
+        }, 400);
       };
 
       s.on("squad:updated", (payload: { userId?: string }) => {
@@ -153,12 +178,8 @@ export default function SquadPage() {
         }
         refresh();
       });
-      s.on("auction:closed", refresh);
-      onBudgetUpdated(s, () => {
-        loadSquad()
-          .then((squad) => applySquad(squad, { refillEmpty: false }))
-          .catch(() => undefined);
-      });
+      // Do not reload on every auction:closed — server already emits squad:updated for winners.
+      onBudgetUpdated(s, refresh);
       s.on(
         "boost:applied",
         (payload: {

@@ -1,4 +1,3 @@
-import { Prisma } from "@prisma/client";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { MAX_STARTERS, SQUAD_LIMIT } from "@/lib/auction/constants";
@@ -15,68 +14,66 @@ export async function GET(
     if (!session.userId) return apiError("Not authenticated", 401);
 
     const code = params.code.toUpperCase();
-    const room = await prisma.room.findUnique({ where: { code } });
+    const room = await prisma.room.findUnique({
+      where: { code },
+      select: { id: true, code: true, name: true, phase: true },
+    });
     if (!room) return apiError("Room not found");
     if (room.id !== session.roomId) return apiError("Wrong room");
 
-    const user = await prisma.user.findUnique({ where: { id: session.userId } });
+    const [user, squad, loanedOutIds, borrowedLoans] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: session.userId },
+        select: {
+          id: true,
+          displayName: true,
+          teamName: true,
+          budget: true,
+          isAdmin: true,
+        },
+      }),
+      prisma.squadPlayer.findMany({
+        where: { userId: session.userId },
+        include: { player: true },
+        orderBy: [{ isStarting: "desc" }, { player: { baseRating: "desc" } }],
+      }),
+      getLoanedOutPlayerIds(session.userId),
+      prisma.loan.findMany({
+        where: { borrowerId: session.userId, status: "active" },
+        include: { player: true },
+      }),
+    ]);
+
     if (!user) return apiError("User not found", 401);
 
-    const squad = await prisma.squadPlayer.findMany({
-      where: { userId: session.userId },
-      include: { player: true },
-      orderBy: [{ isStarting: "desc" }, { player: { baseRating: "desc" } }],
-    });
-
-    const loanedOutIds = await getLoanedOutPlayerIds(session.userId);
-    const borrowedLoans = await prisma.loan.findMany({
-      where: { borrowerId: session.userId, status: "active" },
-      include: { player: true },
-    });
-
-    // Backfill face stats for players who only have OVR boost (legacy / failed write)
-    const enriched = await Promise.all(
-      squad.map(async (s) => {
-        const player = s.player;
-        const hasOvrBoost =
-          player.boostedRating != null && player.boostedRating > player.baseRating;
-        const existing = parseBoostedStats(player.boostedStats);
-        if (!hasOvrBoost || existing.length > 0) {
-          return {
-            ...s,
-            player: {
-              ...player,
-              boostedStats: existing.length > 0 ? existing : player.boostedStats,
-            },
-          };
-        }
-
-        const stats = ensureBoostedStats(
-          player.position,
-          player.baseRating,
-          player.boostedRating,
-          player.boostedStats
-        );
-        if (stats.length === 0) return s;
-
-        try {
-          await prisma.player.update({
-            where: { id: player.id },
-            data: { boostedStats: stats as unknown as Prisma.InputJsonValue },
-          });
-        } catch {
-          /* still return stats to client even if persist fails */
-        }
-
+    // Compute face-stat backfill in memory only — never write on GET (pool pressure).
+    const enriched = squad.map((s) => {
+      const player = s.player;
+      const hasOvrBoost =
+        player.boostedRating != null && player.boostedRating > player.baseRating;
+      const existing = parseBoostedStats(player.boostedStats);
+      if (!hasOvrBoost || existing.length > 0) {
         return {
           ...s,
-          player: { ...player, boostedStats: stats },
+          player: {
+            ...player,
+            boostedStats: existing.length > 0 ? existing : player.boostedStats,
+          },
         };
-      })
-    );
+      }
 
-    const starters = enriched.filter((s) => s.isStarting);
-    const bench = enriched.filter((s) => !s.isStarting);
+      const stats = ensureBoostedStats(
+        player.position,
+        player.baseRating,
+        player.boostedRating,
+        player.boostedStats
+      );
+      if (stats.length === 0) return s;
+      return {
+        ...s,
+        player: { ...player, boostedStats: stats },
+      };
+    });
 
     const borrowedEntries = borrowedLoans.map((loan) => ({
       id: `loan-${loan.id}`,

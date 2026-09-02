@@ -1,7 +1,7 @@
 "use client";
 
 import { apiPath, apiFetchInit } from "@/lib/api-base";
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
@@ -102,9 +102,11 @@ export default function MarketPage() {
   const [filters, setFilters] = useState<MarketFiltersState>(DEFAULT_FILTERS);
   const [loadingBid, setLoadingBid] = useState(false);
   const [connected, setConnected] = useState(false);
+  const [showAllPlayers, setShowAllPlayers] = useState(false);
 
   const loadMarket = useCallback(async () => {
-    const res = await fetch(apiPath(`/api/rooms/${code}/market`), apiFetchInit);
+    const { apiFetch } = await import("@/lib/api-base");
+    const res = await apiFetch(`/api/rooms/${code}/market`);
     const text = await res.text();
     let payload: MarketData & { error?: string };
     try {
@@ -118,6 +120,16 @@ export default function MarketPage() {
     return payload as MarketData;
   }, [code]);
 
+  const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reloadMarket = useCallback(() => {
+    if (reloadTimer.current) clearTimeout(reloadTimer.current);
+    reloadTimer.current = setTimeout(() => {
+      loadMarket()
+        .then(setData)
+        .catch(() => undefined);
+    }, 400);
+  }, [loadMarket]);
+
   useEffect(() => {
     loadMarket()
       .then(setData)
@@ -126,16 +138,19 @@ export default function MarketPage() {
 
   useEffect(() => {
     const socketUrl = getPublicSocketUrl();
-    import("socket.io-client").then(({ io }) => {
-      const socket = io(socketUrl, { transports: ["websocket", "polling"] });
-      socket.on("connect", () => {
-        setConnected(true);
-        socket.emit("room:join", { roomCode: code });
-      });
-      socket.on("disconnect", () => setConnected(false));
+    let socket: { disconnect: () => void } | null = null;
 
-      socket.on("auction:started", () => loadMarket().then(setData));
-      socket.on(
+    import("socket.io-client").then(({ io }) => {
+      const s = io(socketUrl, { transports: ["websocket", "polling"] });
+      socket = s;
+      s.on("connect", () => {
+        setConnected(true);
+        s.emit("room:join", { roomCode: code });
+      });
+      s.on("disconnect", () => setConnected(false));
+
+      s.on("auction:started", reloadMarket);
+      s.on(
         "bid:placed",
         (bid: {
           auctionId?: string;
@@ -181,7 +196,7 @@ export default function MarketPage() {
               };
             });
           } else {
-            loadMarket().then(setData);
+            reloadMarket();
           }
           if (bid.bidder) {
             setToast(`🔥 ${bid.bidder.teamName} bid ${formatMoney(bid.amount)} on ${bid.playerName}`);
@@ -189,7 +204,7 @@ export default function MarketPage() {
           }
         }
       );
-      socket.on("auction:updated", (payload: {
+      s.on("auction:updated", (payload: {
         auctionId: string;
         currentBid: number;
         currentBidderId: string;
@@ -218,14 +233,29 @@ export default function MarketPage() {
           };
         });
       });
-      socket.on("auction:closed", (result: {
+      s.on("auction:closed", (result: {
+        auctionId?: string;
         status: string;
         playerName: string;
+        playerId?: string;
         winnerTeam?: string;
         finalBid: number;
         isResale?: boolean;
       }) => {
-        loadMarket().then(setData);
+        // Patch locally first — full reload only as fallback / for listings.
+        setData((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            activeAuctions: prev.activeAuctions.filter(
+              (a) => a.id !== result.auctionId && a.playerId !== result.playerId
+            ),
+            availablePlayers: result.playerId
+              ? prev.availablePlayers.filter((p) => p.id !== result.playerId)
+              : prev.availablePlayers,
+          };
+        });
+        reloadMarket();
         if (result.status === "closed" && result.winnerTeam) {
           const line = `🔥 ${result.winnerTeam} signed ${result.playerName} for ${formatMoney(result.finalBid)}`;
           setToast(`✅ ${result.winnerTeam} signed ${result.playerName} for ${formatMoney(result.finalBid)}`);
@@ -235,18 +265,21 @@ export default function MarketPage() {
         }
         setTimeout(() => setToast(null), 5000);
       });
-      socket.on("settings:updated", () => loadMarket().then(setData));
-      onBudgetUpdated(socket, () => loadMarket().then(setData));
-      socket.on("market:locked", () => {
-        loadMarket().then(setData);
+      s.on("settings:updated", reloadMarket);
+      onBudgetUpdated(s, reloadMarket);
+      s.on("market:locked", () => {
+        reloadMarket();
         setToast("Market has been locked");
         setTimeout(() => setToast(null), 4000);
       });
-      socket.on("phase:changed", () => loadMarket().then(setData));
-
-      return () => socket.disconnect();
+      s.on("phase:changed", reloadMarket);
     });
-  }, [code, loadMarket]);
+
+    return () => {
+      if (reloadTimer.current) clearTimeout(reloadTimer.current);
+      socket?.disconnect();
+    };
+  }, [code, reloadMarket]);
 
   const teams = useMemo(() => {
     if (!data) return [];
@@ -270,6 +303,11 @@ export default function MarketPage() {
     if (!data) return [];
     return applyMarketFilters(data.availablePlayers, filters);
   }, [data, filters]);
+
+  const visiblePlayers = useMemo(() => {
+    if (showAllPlayers) return filteredPlayers;
+    return filteredPlayers.slice(0, 48);
+  }, [filteredPlayers, showAllPlayers]);
 
   const myBiddings = useMemo(() => {
     if (!data) return [];
@@ -479,7 +517,7 @@ export default function MarketPage() {
                       currentUserId={user.id}
                       onBid={handleBid}
                       locked={marketLocked}
-                      onExpire={() => loadMarket().then(setData)}
+                      onExpire={reloadMarket}
                     />
                   </div>
                 </div>
@@ -502,7 +540,7 @@ export default function MarketPage() {
                   currentUserId={user.id}
                   onBid={handleBid}
                   locked={marketLocked}
-                  onExpire={() => loadMarket().then(setData)}
+                  onExpire={reloadMarket}
                 />
               ))}
             </div>
@@ -540,17 +578,26 @@ export default function MarketPage() {
                 </p>
               ) : (
                 <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
-                  {filteredPlayers.map((player, i) => (
+                  {visiblePlayers.map((player, i) => (
                     <PlayerCard
                       key={player.id}
                       index={i}
                       player={player}
                       onRequestBid={handleRequestBid}
-                      onListingExpire={() => loadMarket().then(setData)}
+                      onListingExpire={reloadMarket}
                       loading={loadingBid}
                     />
                   ))}
                 </div>
+                {!showAllPlayers && filteredPlayers.length > 48 && (
+                  <button
+                    type="button"
+                    className="fc-btn-secondary w-full"
+                    onClick={() => setShowAllPlayers(true)}
+                  >
+                    Show all {filteredPlayers.length} players
+                  </button>
+                )}
               )}
             </>
           )}

@@ -4,7 +4,7 @@ import next from "next";
 import { Server } from "socket.io";
 
 const PORT = parseInt(process.env.PORT ?? "4000", 10);
-const CHECK_INTERVAL_MS = 1000;
+const CHECK_INTERVAL_MS = 3000;
 const dev = process.env.NODE_ENV !== "production";
 
 // Skip fatal exit during `next build` — DATABASE_URL is only required at runtime
@@ -150,7 +150,7 @@ async function main() {
       const dbExpired = await prisma.auction.findMany({
         where: { status: "active", endsAt: { lte: new Date() } },
         select: { id: true },
-        take: 3,
+        take: 1,
       });
 
       const expiredIds = Array.from(new Set([...memoryExpired, ...dbExpired.map((a) => a.id)]));

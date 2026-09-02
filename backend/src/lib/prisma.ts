@@ -8,7 +8,7 @@ function datasourceUrl(): string | undefined {
   if (!url) return url;
   if (/[?&]connection_limit=/.test(url)) return url;
   const sep = url.includes("?") ? "&" : "?";
-  return `${url}${sep}connection_limit=10&pool_timeout=30`;
+  return `${url}${sep}connection_limit=5&pool_timeout=20`;
 }
 
 export const prisma =

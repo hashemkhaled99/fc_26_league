@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { formatDurationSeconds } from "@/lib/format-duration";
 
@@ -13,17 +13,36 @@ interface CountdownProps {
 export function Countdown({ endsAt, onExpire, urgentThreshold = 10 }: CountdownProps) {
   const reduced = useReducedMotion();
   const [secondsLeft, setSecondsLeft] = useState(0);
+  const expiredRef = useRef(false);
+  const onExpireRef = useRef(onExpire);
+  onExpireRef.current = onExpire;
 
   useEffect(() => {
+    expiredRef.current = false;
+    let id: ReturnType<typeof setInterval> | null = null;
+
     function tick() {
       const left = Math.max(0, Math.ceil((new Date(endsAt).getTime() - Date.now()) / 1000));
       setSecondsLeft(left);
-      if (left === 0 && onExpire) onExpire();
+      if (left === 0) {
+        if (id) {
+          clearInterval(id);
+          id = null;
+        }
+        if (!expiredRef.current) {
+          expiredRef.current = true;
+          onExpireRef.current?.();
+        }
+        return;
+      }
     }
+
     tick();
-    const id = setInterval(tick, 250);
-    return () => clearInterval(id);
-  }, [endsAt, onExpire]);
+    id = setInterval(tick, 1000);
+    return () => {
+      if (id) clearInterval(id);
+    };
+  }, [endsAt]);
 
   const urgent = secondsLeft <= urgentThreshold && secondsLeft > 0;
   const critical = secondsLeft <= 300 && secondsLeft > 0;
