@@ -294,6 +294,24 @@ export default function SquadPage() {
     setTimeout(() => setToast(null), 3500);
   }
 
+  async function confirmInstantSell(squadPlayerId: string) {
+    const res = await fetch(apiPath(`/api/rooms/${code}/squad/instant-sell`), {
+      ...apiFetchInit,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ squadPlayerId }),
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error ?? "Instant sell failed");
+    const squad = await loadSquad();
+    applySquad(squad, { refillEmpty: false });
+    setToast(
+      result.message ??
+        `Instant sold for ${formatMoney(result.refund ?? 0)} (50% refund)`
+    );
+    setTimeout(() => setToast(null), 3500);
+  }
+
   if (error && !data) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -382,6 +400,7 @@ export default function SquadPage() {
           entry={resaleTarget}
           onClose={() => setResaleTarget(null)}
           onConfirm={confirmResale}
+          onInstantSell={confirmInstantSell}
         />
       )}
 
