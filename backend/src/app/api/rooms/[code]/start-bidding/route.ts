@@ -2,7 +2,7 @@ import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { seedPlayersForRoom } from "@/lib/players/seed";
 import { distributeTransferCards } from "@/lib/cards/distribute";
-import { initializeAvailableListings } from "@/lib/auction/listings";
+import { initializeAvailableListings, getMarketWindowEnd } from "@/lib/auction/listings";
 import { emitToRoom } from "@/lib/socket-emit";
 import { apiError, apiSuccess } from "@/lib/api";
 
@@ -32,6 +32,13 @@ export async function POST(
   const playerCount = await seedPlayersForRoom(room.id);
   await initializeAvailableListings(room.id);
 
+  const marketEnd = getMarketWindowEnd();
+  await prisma.roomSettings.upsert({
+    where: { roomId: room.id },
+    create: { roomId: room.id, transferWindowEndsAt: marketEnd, rebidRoundEnabled: false },
+    update: { transferWindowEndsAt: marketEnd, rebidRoundEnabled: false },
+  });
+
   await prisma.room.update({
     where: { id: room.id },
     data: { phase: "bidding" },
@@ -42,10 +49,15 @@ export async function POST(
   await emitToRoom(code, "phase:changed", { phase: "bidding" });
   await emitToRoom(code, "lobby:updated", {});
   await emitToRoom(code, "cards:dealt", { cardsEach: 2 });
+  await emitToRoom(code, "settings:updated", {
+    transferWindowEndsAt: marketEnd.toISOString(),
+    rebidRoundEnabled: false,
+  });
 
   return apiSuccess({
     phase: "bidding",
     playersSeeded: playerCount,
     cardsDealt: cards,
+    marketDeadline: marketEnd.toISOString(),
   });
 }

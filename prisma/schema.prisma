@@ -39,6 +39,7 @@ model RoomSettings {
   deadlineStartsAt          DateTime?
   deadlineEndsAt            DateTime?
   transferWindowEndsAt      DateTime?
+  rebidRoundEnabled         Boolean  @default(false)
   enabledCardTypes          String[] @default([])
   streakBonusEnabled        Boolean  @default(true)
   streakBonusAt3            Int      @default(15000000)

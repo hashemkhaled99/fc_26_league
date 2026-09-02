@@ -5,7 +5,7 @@ import { SQUAD_LIMIT } from "@/lib/auction/constants";
 import { getCatalogFilterOptions } from "@/lib/players/catalog-filters";
 import { ensureFullCatalog, getLeagueLookup } from "@/lib/players/seed";
 import { getActiveEffects, getBlacklists } from "@/lib/cards/effects";
-import { refreshAvailableListings, syncActiveAuctionWindows } from "@/lib/auction/listings";
+import { ensureListingDeadlines } from "@/lib/auction/listings";
 import { apiError, apiSuccess } from "@/lib/api";
 
 const PLAYER_SELECT = {
@@ -52,8 +52,7 @@ export async function GET(
     if (room.id !== session.roomId) return apiError("Wrong room");
 
     await ensureFullCatalog(room.id);
-    await refreshAvailableListings(room.id);
-    await syncActiveAuctionWindows(room.id);
+    await ensureListingDeadlines(room.id);
 
     const [availablePlayersRaw, activeAuctions, user, availableBudget, committedBudget, squadCount] =
       await Promise.all([
@@ -140,8 +139,10 @@ export async function GET(
         deadlineStartsAt: room.settings?.deadlineStartsAt?.toISOString() ?? null,
         deadlineEndsAt: room.settings?.deadlineEndsAt?.toISOString() ?? null,
         transferWindowEndsAt: room.settings?.transferWindowEndsAt?.toISOString() ?? null,
+        rebidRoundEnabled: room.settings?.rebidRoundEnabled ?? false,
         marketLocked: room.settings?.transferWindowEndsAt
-          ? room.settings.transferWindowEndsAt.getTime() <= Date.now()
+          ? room.settings.transferWindowEndsAt.getTime() <= Date.now() &&
+            !(room.settings.rebidRoundEnabled ?? false)
           : false,
       },
       user: {

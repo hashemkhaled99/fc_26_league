@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { canUserBid } from "@/lib/auction/budget";
 import { DEFAULT_STARTING_BID, SQUAD_LIMIT } from "@/lib/auction/constants";
 import { isMarketLocked } from "@/lib/auction/close";
-import { getMarketWindowEnd, secondsUntilMarketWindowEnd } from "@/lib/auction/listings";
+import { getMarketWindowEnd, secondsUntilMarketWindowEnd, getRebidAuctionEnd, secondsUntilRebidEnd, isPastMarketDeadline, isUnbidPlayer } from "@/lib/auction/listings";
 import { setAuctionEnd } from "@/lib/timerStore";
 import { consumeOneShotEffect, getActiveEffects, getPriceTrap } from "@/lib/cards/effects";
 import { emitToRoom } from "@/lib/socket-emit";
@@ -35,8 +35,14 @@ export async function POST(
     if (room.id !== session.roomId) return apiError("Wrong room");
     if (room.phase !== "bidding") return apiError("Market is not open");
 
-    if (isMarketLocked(room.settings)) {
+    if (isMarketLocked(room.settings) && !room.settings?.rebidRoundEnabled) {
       return apiError("Transfer window has closed");
+    }
+
+    const rebidRound = room.settings?.rebidRoundEnabled ?? false;
+
+    if (!rebidRound && isPastMarketDeadline()) {
+      return apiError("Market deadline (9:00 PM) has passed");
     }
 
     const player = await prisma.player.findFirst({
@@ -51,6 +57,13 @@ export async function POST(
       where: { playerId, status: "active" },
     });
     if (existingAuction) return apiError("Auction already active for this player");
+
+    if (rebidRound) {
+      const unbid = await isUnbidPlayer(playerId);
+      if (!unbid) {
+        return apiError("Rebid round is only for players that were never bid on");
+      }
+    }
 
     let startingPrice = DEFAULT_STARTING_BID;
     const bargain = await consumeOneShotEffect(room.id, "bargain_hunter", session.userId);
@@ -71,8 +84,8 @@ export async function POST(
     });
     if (!bidCheck.ok) return apiError(bidCheck.reason ?? "Cannot start auction");
 
-    const endsAt = getMarketWindowEnd();
-    const timerSeconds = secondsUntilMarketWindowEnd();
+    const endsAt = rebidRound ? getRebidAuctionEnd() : getMarketWindowEnd();
+    const timerSeconds = rebidRound ? secondsUntilRebidEnd() : secondsUntilMarketWindowEnd();
 
     const starter = await prisma.user.findUnique({
       where: { id: session.userId },

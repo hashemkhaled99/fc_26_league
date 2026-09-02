@@ -20,6 +20,8 @@ const schema = z.object({
     "force_close_market",
     "open_market",
     "extend_deadline",
+    "enable_rebid_round",
+    "disable_rebid_round",
     "complete_squads",
     "generate_icon_boxes",
     "generate_hero_boxes",
@@ -57,10 +59,16 @@ export async function POST(
 
     if (data.action === "force_close_market") {
       await lockTransferWindow(room.id);
+      await prisma.roomSettings.updateMany({
+        where: { roomId: room.id },
+        data: { rebidRoundEnabled: false },
+      });
       const closed = await forceCloseAllAuctions(room.id, room.code);
       await emitToRoom(room.code, "market:locked", { reason: "force_close" });
       await emitToRoom(room.code, "settings:updated", {
         transferWindowEndsAt: new Date().toISOString(),
+        rebidRoundEnabled: false,
+        marketLocked: true,
       });
       return apiSuccess({ closed: closed.length });
     }
@@ -70,8 +78,13 @@ export async function POST(
         return apiError("Market can only be opened during the bidding phase");
       }
       await unlockTransferWindow(room.id);
+      await prisma.roomSettings.updateMany({
+        where: { roomId: room.id },
+        data: { rebidRoundEnabled: false },
+      });
       await emitToRoom(room.code, "settings:updated", {
         transferWindowEndsAt: null,
+        rebidRoundEnabled: false,
       });
       return apiSuccess({
         transferWindowEndsAt: null,
@@ -101,6 +114,61 @@ export async function POST(
         transferWindowEndsAt: next.toISOString(),
       });
       return apiSuccess({ transferWindowEndsAt: next.toISOString() });
+    }
+
+    if (data.action === "enable_rebid_round") {
+      if (room.phase !== "bidding") {
+        return apiError("Rebid round is only available during the bidding phase");
+      }
+
+      const unbidCount = await prisma.player.count({
+        where: {
+          roomId: room.id,
+          status: "available",
+          isIcon: false,
+          isHero: false,
+          auctions: { none: {} },
+        },
+      });
+
+      await prisma.roomSettings.upsert({
+        where: { roomId: room.id },
+        create: { roomId: room.id, rebidRoundEnabled: true, transferWindowEndsAt: null },
+        update: { rebidRoundEnabled: true, transferWindowEndsAt: null },
+      });
+
+      await emitToRoom(room.code, "settings:updated", {
+        rebidRoundEnabled: true,
+        transferWindowEndsAt: null,
+        marketLocked: false,
+      });
+
+      return apiSuccess({
+        rebidRoundEnabled: true,
+        unbidPlayers: unbidCount,
+        message: `Rebid round enabled. ${unbidCount} un-bid players can be auctioned with a 2-minute timer.`,
+      });
+    }
+
+    if (data.action === "disable_rebid_round") {
+      await lockTransferWindow(room.id);
+      await prisma.roomSettings.updateMany({
+        where: { roomId: room.id },
+        data: { rebidRoundEnabled: false },
+      });
+
+      const lockedAt = new Date();
+      await emitToRoom(room.code, "settings:updated", {
+        rebidRoundEnabled: false,
+        transferWindowEndsAt: lockedAt.toISOString(),
+        marketLocked: true,
+      });
+      await emitToRoom(room.code, "market:locked", { reason: "rebid_round_ended" });
+
+      return apiSuccess({
+        rebidRoundEnabled: false,
+        message: "Rebid round closed. Market is locked.",
+      });
     }
 
     if (data.action === "complete_squads") {

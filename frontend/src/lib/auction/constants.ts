@@ -10,6 +10,12 @@ export const MAX_BID_TIMER_SECONDS = 12 * 60 * 60;
 /** How long an available (unauctioned) player stays listed before auto re-listing. */
 export const LISTING_DURATION_SECONDS = MAX_BID_TIMER_SECONDS;
 
+/** Shared market deadline hour in listing timezone (21 = 9:00 PM). Override with MARKET_DEADLINE_HOUR. */
+export const MARKET_DEADLINE_HOUR = parseInt(process.env.MARKET_DEADLINE_HOUR ?? "21", 10);
+
+/** Short timer for the post-deadline rebid round (un-bid players only). */
+export const REBID_TIMER_SECONDS = 120;
+
 /** Only extend the auction clock when this many seconds or less remain. */
 export const BID_EXTEND_THRESHOLD_SEC = 60;
 /** Seconds added per bid during the final minute. */

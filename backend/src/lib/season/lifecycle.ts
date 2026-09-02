@@ -71,6 +71,7 @@ export async function startNewSeason(roomId: string, roomCode: string) {
       create: { roomId, transferWindowEndsAt: null },
       update: {
         transferWindowEndsAt: null,
+        rebidRoundEnabled: false,
         deadlineStartsAt: null,
         deadlineEndsAt: null,
       },

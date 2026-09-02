@@ -194,9 +194,15 @@ async function main() {
           await forceCloseAllAuctions(s.roomId, s.room.code);
         }
 
+        await prisma.roomSettings.updateMany({
+          where: { roomId: s.roomId },
+          data: { rebidRoundEnabled: false },
+        });
+
         io.to(s.room.code).emit("market:locked", { reason: "window_ended" });
         io.to(s.room.code).emit("settings:updated", {
           transferWindowEndsAt: s.transferWindowEndsAt?.toISOString(),
+          rebidRoundEnabled: false,
           marketLocked: true,
         });
       }
