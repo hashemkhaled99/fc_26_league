@@ -86,8 +86,18 @@ export default function MarketHistoryPage() {
 
   const load = useCallback(async () => {
     const res = await fetch(apiPath(`/api/rooms/${code}/market/history`), apiFetchInit);
-    const payload = await res.json();
-    if (!res.ok) throw new Error(payload.error ?? "Failed to load");
+    const text = await res.text();
+    let payload: HistoryData & { error?: string };
+    try {
+      payload = text ? JSON.parse(text) : {};
+    } catch {
+      throw new Error(
+        text.startsWith("upstream")
+          ? "Could not reach the server. Redeploy the backend and run prisma db push."
+          : "Market stats API returned invalid data. Try refreshing."
+      );
+    }
+    if (!res.ok) throw new Error(payload.error ?? "Failed to load market stats");
     return payload as HistoryData;
   }, [code]);
 
@@ -135,7 +145,7 @@ export default function MarketHistoryPage() {
           {[
             { label: "Total deals", value: summary.totalDeals.toString() },
             { label: "Total volume", value: formatMoney(summary.totalVolume) },
-            { label: "Avg deal", value: formatMoney(summary.avgPrice) },
+            { label: "Avg deal", value: summary.totalDeals > 0 ? formatMoney(summary.avgPrice) : "—" },
             { label: "Resales", value: summary.resaleCount.toString() },
           ].map((stat, i) => (
             <GlowCard key={stat.label} delay={i * 0.05}>
@@ -144,6 +154,14 @@ export default function MarketHistoryPage() {
             </GlowCard>
           ))}
         </div>
+
+        {summary.totalDeals === 0 && (
+          <GlowCard>
+            <p className="text-center text-fc-muted py-6">
+              No completed transfers yet. Stats will appear here after players are signed from the market.
+            </p>
+          </GlowCard>
+        )}
 
         <div className="grid gap-6 lg:grid-cols-2">
           <section>

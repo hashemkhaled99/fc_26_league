@@ -1,5 +1,30 @@
 import { prisma } from "@/lib/prisma";
 
+type LoanRow = {
+  id: string;
+  lenderId: string;
+  borrowerId: string;
+  playerId: string;
+  loanFee: number;
+  fixturesTotal: number;
+  fixturesPlayed: number;
+  status: string;
+  createdAt: Date;
+};
+
+async function loadLoanHistory(roomId: string): Promise<LoanRow[]> {
+  try {
+    return await prisma.loan.findMany({
+      where: { roomId, status: { in: ["returned", "active"] } },
+      orderBy: { createdAt: "desc" },
+      take: 30,
+    });
+  } catch (err) {
+    console.warn("Loan stats unavailable (run prisma db push):", err);
+    return [];
+  }
+}
+
 export async function getMarketHistoryStats(roomId: string) {
   const closed = await prisma.auction.findMany({
     where: {
@@ -27,11 +52,7 @@ export async function getMarketHistoryStats(roomId: string) {
     userIds.add(t.toUserId);
   }
 
-  const completedLoans = await prisma.loan.findMany({
-    where: { roomId, status: { in: ["returned", "active"] } },
-    orderBy: { createdAt: "desc" },
-    take: 30,
-  });
+  const completedLoans = await loadLoanHistory(roomId);
   for (const l of completedLoans) {
     userIds.add(l.lenderId);
     userIds.add(l.borrowerId);

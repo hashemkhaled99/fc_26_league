@@ -174,7 +174,17 @@ export default function LoansPage() {
 
   const load = useCallback(async () => {
     const res = await fetch(apiPath(`/api/rooms/${code}/loans`), apiFetchInit);
-    const payload = await res.json();
+    const text = await res.text();
+    let payload: LoansData & { error?: string };
+    try {
+      payload = text ? JSON.parse(text) : {};
+    } catch {
+      throw new Error(
+        text.startsWith("upstream")
+          ? "Could not reach the server. Redeploy the backend and run prisma db push."
+          : "Loans API returned invalid data. Try refreshing."
+      );
+    }
     if (!res.ok) throw new Error(payload.error ?? "Failed to load loans");
     return payload as LoansData;
   }, [code]);
