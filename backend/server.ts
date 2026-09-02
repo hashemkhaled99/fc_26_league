@@ -144,17 +144,26 @@ async function main() {
       const expiredIds = Array.from(new Set([...memoryExpired, ...dbExpired.map((a) => a.id)]));
 
       for (const auctionId of expiredIds) {
-        const result = await closeAuction(auctionId);
-        await clearAuctionEnd(auctionId);
-        if (!result) continue;
+        try {
+          const result = await closeAuction(auctionId);
+          await clearAuctionEnd(auctionId);
+          if (!result) continue;
 
-        io.to(result.roomCode).emit("auction:closed", result);
+          io.to(result.roomCode).emit("auction:closed", result);
 
-        if (result.status === "closed" && result.winnerId) {
-          io.to(result.roomCode).emit("squad:updated", { userId: result.winnerId });
-        }
-        if (result.sellerId) {
-          io.to(result.roomCode).emit("squad:updated", { userId: result.sellerId });
+          if (result.status === "closed" && result.winnerId) {
+            io.to(result.roomCode).emit("squad:updated", { userId: result.winnerId });
+          }
+          if (result.sellerId) {
+            io.to(result.roomCode).emit("squad:updated", { userId: result.sellerId });
+          }
+        } catch (err) {
+          console.error(`Auction closer error for ${auctionId}:`, err);
+          try {
+            await clearAuctionEnd(auctionId);
+          } catch {
+            /* ignore */
+          }
         }
       }
     } catch (err) {

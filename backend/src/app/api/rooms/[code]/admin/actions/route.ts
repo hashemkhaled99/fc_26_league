@@ -6,6 +6,7 @@ import {
   lockTransferWindow,
   unlockTransferWindow,
 } from "@/lib/admin/market";
+import { returnAllPlayersToMarket, forceMarketDeadline } from "@/lib/auction/close";
 import { notifyBudgetUpdated, setRoomUserBudget } from "@/lib/admin/users";
 import { applyBotBoost } from "@/lib/league/botBoost";
 import { generateIconBoxes, generateHeroBoxes, iconBoxProgress, heroBoxProgress } from "@/lib/icons/generate";
@@ -22,6 +23,8 @@ const schema = z.object({
     "extend_deadline",
     "enable_rebid_round",
     "disable_rebid_round",
+    "return_all_to_market",
+    "force_deadline_930",
     "complete_squads",
     "generate_icon_boxes",
     "generate_hero_boxes",
@@ -168,6 +171,43 @@ export async function POST(
       return apiSuccess({
         rebidRoundEnabled: false,
         message: "Rebid round closed. Market is locked.",
+      });
+    }
+
+    if (data.action === "return_all_to_market") {
+      if (room.phase !== "bidding") {
+        return apiError("Only available during the bidding phase");
+      }
+      const result = await returnAllPlayersToMarket(room.id);
+      await emitToRoom(room.code, "settings:updated", {
+        transferWindowEndsAt: result.marketDeadline,
+        rebidRoundEnabled: false,
+        marketLocked: false,
+        marketDeadlineAt: result.marketDeadline,
+      });
+      await emitToRoom(room.code, "market:updated", { reason: "return_all_to_market" });
+      await emitToRoom(room.code, "lobby:updated", {});
+      return apiSuccess({
+        ...result,
+        message: `Returned ${result.releasedPlayers} players to market (refunded ${Math.round(result.refundedBudget / 1_000_000)}M). Deadline set to 9:30 PM. Cancelled ${result.cancelledAuctions} auctions.`,
+      });
+    }
+
+    if (data.action === "force_deadline_930") {
+      if (room.phase !== "bidding") {
+        return apiError("Only available during the bidding phase");
+      }
+      const result = await forceMarketDeadline(room.id);
+      await emitToRoom(room.code, "settings:updated", {
+        transferWindowEndsAt: result.marketDeadline,
+        marketDeadlineAt: result.marketDeadline,
+        rebidRoundEnabled: false,
+        marketLocked: false,
+      });
+      await emitToRoom(room.code, "market:updated", { reason: "force_deadline_930" });
+      return apiSuccess({
+        ...result,
+        message: `Synced ${result.listings} listings and ${result.auctions} live auctions to 9:30 PM.`,
       });
     }
 

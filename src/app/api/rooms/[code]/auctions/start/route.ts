@@ -65,9 +65,24 @@ export async function POST(
       }
     }
 
-    let startingPrice = DEFAULT_STARTING_BID;
+    // Start from the player's last auction bid/sale when available; otherwise default 5M.
+    const lastAuction = await prisma.auction.findFirst({
+      where: {
+        playerId,
+        roomId: room.id,
+        status: { in: ["closed", "cancelled"] },
+        currentBid: { gte: DEFAULT_STARTING_BID },
+      },
+      orderBy: [{ createdAt: "desc" }],
+      select: { currentBid: true },
+    });
+
+    let startingPrice = lastAuction?.currentBid ?? DEFAULT_STARTING_BID;
     const bargain = await consumeOneShotEffect(room.id, "bargain_hunter", session.userId);
-    if (bargain) startingPrice = 4_000_000;
+    if (bargain) {
+      // Bargain Hunter: 1M off the opening price (floor 4M).
+      startingPrice = Math.max(4_000_000, startingPrice - 1_000_000);
+    }
 
     const effects = await getActiveEffects(room.id);
     const trap = getPriceTrap(effects, playerId);

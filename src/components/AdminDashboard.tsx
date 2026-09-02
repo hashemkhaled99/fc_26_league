@@ -382,6 +382,37 @@ export function AdminDashboard({ code }: { code: string }) {
                 >
                   Force Close Market
                 </button>
+                <button
+                  type="button"
+                  className="rounded-lg bg-orange-500/90 px-5 py-3 font-bold text-white hover:bg-orange-400"
+                  disabled={busy}
+                  onClick={() =>
+                    setConfirm({
+                      title: "Return All Players to Market",
+                      message:
+                        "Cancels all live auctions, removes every regular player from all squads, refunds each manager their purchase price, and lists everyone on the market until 9:30 PM. Icons/Heroes stay. This cannot be undone.",
+                      action: "return_all_to_market",
+                      danger: true,
+                    })
+                  }
+                >
+                  Return All to Market (9:30)
+                </button>
+                <button
+                  type="button"
+                  className="fc-btn-secondary"
+                  disabled={busy}
+                  onClick={() =>
+                    setConfirm({
+                      title: "Force Deadline 9:30 PM",
+                      message:
+                        "Sets every available listing and live auction timer to end at 9:30 PM without clearing squads.",
+                      action: "force_deadline_930",
+                    })
+                  }
+                >
+                  Sync Timers → 9:30 PM
+                </button>
                 {!settings.rebidRoundEnabled && (
                   <button
                     type="button"
