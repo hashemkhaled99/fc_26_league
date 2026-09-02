@@ -4,6 +4,7 @@ import { apiPath, apiFetchInit } from "@/lib/api-base";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
+import Link from "next/link";
 import { RoomLayoutShell } from "@/components/RoomLayoutShell";
 import { GlowCard } from "@/components/GlowCard";
 import { FormationBoard, reconcileSlotMap } from "@/components/FormationBoard";
@@ -243,16 +244,22 @@ export default function SquadPage() {
     });
   }
 
-  async function toggleStarter(squadPlayerId: string, isStarting: boolean) {
+  async function toggleStarter(entryId: string, isStarting: boolean) {
     setBusy(true);
     setError("");
-    optimisticMove(squadPlayerId, isStarting);
+    optimisticMove(entryId, isStarting);
     try {
+      const all = data ? [...data.starters, ...data.bench] : [];
+      const entry = all.find((e) => e.id === entryId);
+      const body = entry?.loanId
+        ? { loanId: entry.loanId, isStarting }
+        : { squadPlayerId: entryId, isStarting };
+
       const res = await fetch(apiPath(`/api/rooms/${code}/squad/toggle-starter`), {
         ...apiFetchInit,
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ squadPlayerId, isStarting }),
+        body: JSON.stringify(body),
       });
       const result = await res.json();
       if (!res.ok) throw new Error(result.error ?? "Could not update");

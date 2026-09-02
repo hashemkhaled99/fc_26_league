@@ -10,8 +10,12 @@ import {
 
 export interface SquadEntry {
   id: string;
+  loanId?: string | null;
   isStarting: boolean;
   purchasePrice: number;
+  isLoanedIn?: boolean;
+  isLoanedOut?: boolean;
+  loanFixturesRemaining?: number | null;
   player: {
     id: string;
     name: string;
@@ -113,6 +117,16 @@ export function SquadPlayerCard({
             Hero
           </div>
         )}
+        {entry.isLoanedIn && (
+          <div className="absolute bottom-1.5 left-2 text-[9px] font-bold uppercase bg-sky-500/90 text-white px-1.5 py-0.5 rounded">
+            On loan
+          </div>
+        )}
+        {entry.isLoanedOut && (
+          <div className="absolute bottom-1.5 left-2 text-[9px] font-bold uppercase bg-orange-500/90 text-white px-1.5 py-0.5 rounded">
+            Loaned out
+          </div>
+        )}
         <div className="absolute top-1.5 right-2 text-[10px] font-bold text-white/80 bg-black/30 px-1.5 py-0.5 rounded">
           {player.position}
         </div>
@@ -135,12 +149,23 @@ export function SquadPlayerCard({
           </p>
         )}
         <p className="text-[10px] text-fc-muted">
-          Paid <span className="text-fc-green font-mono">{formatMoney(entry.purchasePrice)}</span>
+          {entry.isLoanedIn ? (
+            <>
+              Loan ·{" "}
+              <span className="text-fc-accent font-mono">
+                {entry.loanFixturesRemaining ?? "?"} fixtures left
+              </span>
+            </>
+          ) : (
+            <>
+              Paid <span className="text-fc-green font-mono">{formatMoney(entry.purchasePrice)}</span>
+            </>
+          )}
         </p>
         <div className="flex gap-1">
           <button
             type="button"
-            disabled={busy}
+            disabled={busy || entry.isLoanedOut}
             onClick={() => onToggleStarter(entry.id, !entry.isStarting)}
             className={`flex-1 rounded-md px-2 py-1.5 text-[10px] font-bold transition-colors disabled:opacity-50 ${
               entry.isStarting
@@ -150,7 +175,7 @@ export function SquadPlayerCard({
           >
             {entry.isStarting ? "→ Bench" : "→ Start"}
           </button>
-          {canResale && (
+          {canResale && !entry.isLoanedIn && !entry.isLoanedOut && (
             <button
               type="button"
               disabled={busy}

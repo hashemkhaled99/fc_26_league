@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { SQUAD_LIMIT } from "./constants";
+import { getEffectiveSquadCount } from "@/lib/loans/engine";
 
 /** Sum of amounts where user is current highest bidder on active auctions */
 export async function getCommittedBudget(userId: string): Promise<number> {
@@ -14,7 +15,7 @@ export async function getCommittedBudget(userId: string): Promise<number> {
 }
 
 export async function getSquadCount(userId: string): Promise<number> {
-  return prisma.squadPlayer.count({ where: { userId } });
+  return getEffectiveSquadCount(userId);
 }
 
 export async function getAvailableBudget(userId: string): Promise<number> {

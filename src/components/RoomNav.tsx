@@ -13,8 +13,10 @@ interface RoomNavProps {
 const NAV_ITEMS = [
   { href: "lobby", label: "Lobby", phases: ["lobby", "bidding", "league", "season_end"] },
   { href: "market", label: "Market", phases: ["bidding"] },
+  { href: "market/history", label: "Stats", phases: ["bidding", "league", "season_end"] },
   { href: "squad", label: "Squad", phases: ["bidding", "league", "season_end"] },
   { href: "trades", label: "Trades", phases: ["bidding", "league"] },
+  { href: "loans", label: "Loans", phases: ["bidding", "league"] },
   { href: "icon-boxes", label: "Icons", phases: ["bidding", "league"] },
   { href: "hero-boxes", label: "Heroes", phases: ["bidding", "league"] },
   { href: "league", label: "League", phases: ["bidding", "league", "season_end"] },

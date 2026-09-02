@@ -19,6 +19,7 @@ model Room {
   players       Player[]
   auctions      Auction[]
   trades        TradeRequest[]
+  loans         Loan[]
   matches       Match[]
   cards         Card[]
   awards        Award[]
@@ -140,6 +141,25 @@ model TradeRequest {
   cashAdjustment     Int      @default(0)
   status             String   @default("pending")
   createdAt          DateTime @default(now())
+}
+
+/// Temporary player loan — lender keeps ownership; borrower uses player for N fixtures.
+model Loan {
+  id               String    @id @default(cuid())
+  room             Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId           String
+  season           Int
+  lenderId         String
+  borrowerId       String
+  playerId         String
+  loanFee          Int       @default(0)
+  fixturesTotal    Int
+  fixturesPlayed   Int       @default(0)
+  borrowerIsStarting Boolean @default(false)
+  status           String    @default("pending")
+  createdAt        DateTime  @default(now())
+  acceptedAt       DateTime?
+  returnedAt       DateTime?
 }
 
 model Match {

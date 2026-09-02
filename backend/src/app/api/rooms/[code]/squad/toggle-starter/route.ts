@@ -6,7 +6,8 @@ import { emitToRoom } from "@/lib/socket-emit";
 import { apiError, apiSuccess } from "@/lib/api";
 
 const schema = z.object({
-  squadPlayerId: z.string(),
+  squadPlayerId: z.string().optional(),
+  loanId: z.string().optional(),
   isStarting: z.boolean(),
 });
 
@@ -24,7 +25,50 @@ export async function POST(
     if (room.id !== session.roomId) return apiError("Wrong room");
 
     const body = await request.json();
-    const { squadPlayerId, isStarting } = schema.parse(body);
+    const { squadPlayerId, loanId, isStarting } = schema.parse(body);
+
+    if (!squadPlayerId && !loanId) {
+      return apiError("squadPlayerId or loanId required");
+    }
+
+    if (loanId) {
+      const loan = await prisma.loan.findFirst({
+        where: { id: loanId, borrowerId: session.userId, status: "active" },
+        include: { player: true },
+      });
+      if (!loan) return apiError("Loaned player not found");
+
+      if (isStarting && !loan.borrowerIsStarting) {
+        const ownedStarters = await prisma.squadPlayer.count({
+          where: { userId: session.userId, isStarting: true },
+        });
+        const loanStarters = await prisma.loan.count({
+          where: { borrowerId: session.userId, status: "active", borrowerIsStarting: true },
+        });
+        if (ownedStarters + loanStarters >= MAX_STARTERS) {
+          return apiError(`Already have ${MAX_STARTERS} starters. Bench someone first.`);
+        }
+      }
+
+      const updated = await prisma.loan.update({
+        where: { id: loanId },
+        data: { borrowerIsStarting: isStarting },
+        include: { player: true },
+      });
+
+      await emitToRoom(code, "squad:updated", { userId: session.userId });
+
+      return apiSuccess({
+        squadPlayer: {
+          id: `loan-${updated.id}`,
+          loanId: updated.id,
+          isStarting: updated.borrowerIsStarting,
+          purchasePrice: 0,
+          isLoanedIn: true,
+          player: updated.player,
+        },
+      });
+    }
 
     const entry = await prisma.squadPlayer.findFirst({
       where: { id: squadPlayerId, userId: session.userId },
@@ -33,11 +77,19 @@ export async function POST(
 
     if (!entry) return apiError("Player not in your squad");
 
+    const loanedOut = await prisma.loan.findFirst({
+      where: { playerId: entry.playerId, lenderId: session.userId, status: "active" },
+    });
+    if (loanedOut) return apiError("This player is on loan");
+
     if (isStarting && !entry.isStarting) {
-      const starterCount = await prisma.squadPlayer.count({
+      const ownedStarters = await prisma.squadPlayer.count({
         where: { userId: session.userId, isStarting: true },
       });
-      if (starterCount >= MAX_STARTERS) {
+      const loanStarters = await prisma.loan.count({
+        where: { borrowerId: session.userId, status: "active", borrowerIsStarting: true },
+      });
+      if (ownedStarters + loanStarters >= MAX_STARTERS) {
         return apiError(`Already have ${MAX_STARTERS} starters. Bench someone first.`);
       }
     }

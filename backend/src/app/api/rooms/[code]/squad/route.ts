@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { MAX_STARTERS, SQUAD_LIMIT } from "@/lib/auction/constants";
 import { apiError, apiSuccess } from "@/lib/api";
 import { ensureBoostedStats, parseBoostedStats } from "@/lib/players/faceStats";
+import { getLoanedOutPlayerIds } from "@/lib/loans/engine";
 
 export async function GET(
   _request: Request,
@@ -25,6 +26,12 @@ export async function GET(
       where: { userId: session.userId },
       include: { player: true },
       orderBy: [{ isStarting: "desc" }, { player: { baseRating: "desc" } }],
+    });
+
+    const loanedOutIds = await getLoanedOutPlayerIds(session.userId);
+    const borrowedLoans = await prisma.loan.findMany({
+      where: { borrowerId: session.userId, status: "active" },
+      include: { player: true },
     });
 
     // Backfill face stats for players who only have OVR boost (legacy / failed write)
@@ -71,6 +78,32 @@ export async function GET(
     const starters = enriched.filter((s) => s.isStarting);
     const bench = enriched.filter((s) => !s.isStarting);
 
+    const borrowedEntries = borrowedLoans.map((loan) => ({
+      id: `loan-${loan.id}`,
+      loanId: loan.id,
+      isStarting: loan.borrowerIsStarting,
+      purchasePrice: 0,
+      isLoanedIn: true,
+      isLoanedOut: false,
+      loanFixturesRemaining: Math.max(0, loan.fixturesTotal - loan.fixturesPlayed),
+      player: loan.player,
+    }));
+
+    const ownedMapped = enriched.map((s) => ({
+      id: s.id,
+      loanId: null as string | null,
+      isStarting: loanedOutIds.has(s.player.id) ? false : s.isStarting,
+      purchasePrice: s.purchasePrice,
+      isLoanedIn: false,
+      isLoanedOut: loanedOutIds.has(s.player.id),
+      loanFixturesRemaining: null as number | null,
+      player: s.player,
+    }));
+
+    const allSquad = [...ownedMapped, ...borrowedEntries];
+    const allStarters = allSquad.filter((s) => s.isStarting);
+    const allBench = allSquad.filter((s) => !s.isStarting);
+
     return apiSuccess({
       room: {
         code: room.code,
@@ -84,27 +117,12 @@ export async function GET(
         budget: user.budget,
         isAdmin: user.isAdmin,
       },
-      squad: enriched.map((s) => ({
-        id: s.id,
-        isStarting: s.isStarting,
-        purchasePrice: s.purchasePrice,
-        player: s.player,
-      })),
-      starters: starters.map((s) => ({
-        id: s.id,
-        isStarting: s.isStarting,
-        purchasePrice: s.purchasePrice,
-        player: s.player,
-      })),
-      bench: bench.map((s) => ({
-        id: s.id,
-        isStarting: s.isStarting,
-        purchasePrice: s.purchasePrice,
-        player: s.player,
-      })),
+      squad: allSquad,
+      starters: allStarters,
+      bench: allBench,
       counts: {
-        total: enriched.length,
-        starters: starters.length,
+        total: allSquad.length,
+        starters: allStarters.length,
         maxStarters: MAX_STARTERS,
         squadLimit: SQUAD_LIMIT,
       },

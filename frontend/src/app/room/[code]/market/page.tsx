@@ -3,6 +3,7 @@
 import { apiPath, apiFetchInit } from "@/lib/api-base";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { RoomLayoutShell } from "@/components/RoomLayoutShell";
 import { GlowCard } from "@/components/GlowCard";
@@ -325,6 +326,15 @@ export default function MarketPage() {
         />
 
         <DealTicker roomCode={room.code} liveLine={liveDeal} />
+
+        <div className="flex justify-end">
+          <Link
+            href={`/room/${room.code}/market/history`}
+            className="text-sm text-fc-accent hover:text-fc-gold transition"
+          >
+            Market stats & history →
+          </Link>
+        </div>
 
         <GlowCard glow="green">
           <div className="flex flex-wrap items-center justify-between gap-4">

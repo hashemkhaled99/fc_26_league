@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { SQUAD_LIMIT } from "@/lib/auction/constants";
 import { getCommittedBudget } from "@/lib/auction/budget";
+import { getActiveLoanForPlayer, getEffectiveSquadCount } from "@/lib/loans/engine";
 
 export type TradeValidation =
   | { ok: true }
@@ -71,8 +72,15 @@ export async function validateTrade(params: {
     return { ok: false, reason: "A player in this trade is currently in an auction" };
   }
 
-  const fromCount = fromOwned.size;
-  const toCount = toOwned.size;
+  for (const id of [...offeredPlayerIds, ...requestedPlayerIds]) {
+    const loan = await getActiveLoanForPlayer(id);
+    if (loan) {
+      return { ok: false, reason: "A player in this trade is currently on loan" };
+    }
+  }
+
+  const fromCount = await getEffectiveSquadCount(fromUserId);
+  const toCount = await getEffectiveSquadCount(toUserId);
   const fromAfter = fromCount - offeredPlayerIds.length + requestedPlayerIds.length;
   const toAfter = toCount - requestedPlayerIds.length + offeredPlayerIds.length;
 

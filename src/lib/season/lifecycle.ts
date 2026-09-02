@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { calculateSeasonAwards, payLeaguePrizes } from "@/lib/awards/engine";
 import { distributeTransferCards } from "@/lib/cards/distribute";
 import { forceCloseAllAuctions } from "@/lib/admin/market";
+import { returnAllActiveLoans } from "@/lib/loans/engine";
 
 /** End the league season → awards + prizes + season_end phase. */
 export async function endSeason(roomId: string, _roomCode: string) {
@@ -42,6 +43,7 @@ export async function startNewSeason(roomId: string, roomCode: string) {
   }
 
   await forceCloseAllAuctions(roomId, roomCode);
+  await returnAllActiveLoans(roomId);
 
   const newSeason = room.currentSeason + 1;
 
@@ -59,6 +61,10 @@ export async function startNewSeason(roomId: string, roomCode: string) {
     prisma.tradeRequest.updateMany({
       where: { roomId, status: "pending" },
       data: { status: "rejected" },
+    }),
+    prisma.loan.updateMany({
+      where: { roomId, status: "pending" },
+      data: { status: "cancelled" },
     }),
     prisma.roomSettings.upsert({
       where: { roomId },

@@ -163,6 +163,24 @@ export async function POST(
         awayScore: match.awayScore,
       });
 
+      const { processLoanFixtureTicks } = await import("@/lib/loans/engine");
+      const returnedLoans = await processLoanFixtureTicks(room.id, [
+        match.homeUserId,
+        match.awayUserId,
+      ]);
+      for (const loanId of returnedLoans) {
+        const loan = await prisma.loan.findUnique({ where: { id: loanId } });
+        if (!loan) continue;
+        await emitToRoom(code, "loan:resolved", {
+          loanId,
+          status: "returned",
+          lenderId: loan.lenderId,
+          borrowerId: loan.borrowerId,
+        });
+        await emitToRoom(code, "squad:updated", { userId: loan.lenderId });
+        await emitToRoom(code, "squad:updated", { userId: loan.borrowerId });
+      }
+
       await emitToRoom(code, "match:updated", { matchId: match.id, status: "confirmed" });
       if (streakPaid.length > 0) {
         await emitToRoom(code, "streak:bonus", { bonuses: streakPaid });

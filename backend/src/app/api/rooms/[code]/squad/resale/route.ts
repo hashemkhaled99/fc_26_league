@@ -6,6 +6,7 @@ import { getMarketWindowEnd, secondsUntilMarketWindowEnd } from "@/lib/auction/l
 import { setAuctionEnd } from "@/lib/timerStore";
 import { emitToRoom } from "@/lib/socket-emit";
 import { apiError, apiSuccess } from "@/lib/api";
+import { getActiveLoanForPlayer } from "@/lib/loans/engine";
 
 const schema = z.object({
   squadPlayerId: z.string(),
@@ -44,6 +45,9 @@ export async function POST(
 
     if (!entry) return apiError("Player not in your squad");
     if (entry.player.status !== "owned") return apiError("Player cannot be listed");
+
+    const activeLoan = await getActiveLoanForPlayer(entry.playerId);
+    if (activeLoan) return apiError("Cannot list a player who is on loan");
 
     const existingAuction = await prisma.auction.findFirst({
       where: { playerId: entry.playerId, status: "active" },
