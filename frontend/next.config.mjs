@@ -20,9 +20,11 @@ const socketUrl =
 const nextConfig = {
   reactStrictMode: true,
   output: "standalone",
-  // API calls use same-origin relative URLs; Next proxies /api/* to the backend.
+  // Browser talks to the backend URL directly (CORS + credentials).
+  // Rewrites remain as a fallback for relative /api calls.
   env: {
-    NEXT_PUBLIC_API_URL: "",
+    NEXT_PUBLIC_API_URL:
+      normalizeUrl(process.env.NEXT_PUBLIC_API_URL) || PROD_BACKEND_URL,
     NEXT_PUBLIC_SOCKET_URL: socketUrl,
   },
   async rewrites() {

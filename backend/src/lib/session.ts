@@ -11,7 +11,11 @@ export interface SessionData {
 }
 
 export const sessionOptions: SessionOptions = {
-  password: process.env.SESSION_SECRET ?? "complex_password_at_least_32_characters_long",
+  password: (() => {
+    const raw = process.env.SESSION_SECRET ?? "complex_password_at_least_32_characters_long";
+    // iron-session requires >= 32 chars; pad misconfigured secrets instead of crashing joins.
+    return raw.length >= 32 ? raw : raw.padEnd(32, "0");
+  })(),
   cookieName: "fc26_session",
   cookieOptions: {
     secure: process.env.NODE_ENV === "production",

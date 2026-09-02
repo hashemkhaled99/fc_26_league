@@ -27,8 +27,9 @@ function resolveApiUrl(): string {
     return DEV_BACKEND;
   }
 
-  // Production: same-origin /api/* proxied to backend via next.config rewrites.
-  return "";
+  // Talk to the backend directly — same-origin Next rewrites were returning
+  // plain-text 500/503 bodies that broke JSON parsing on join/squad.
+  return PROD_BACKEND;
 }
 
 function resolveSocketUrl(): string {
@@ -54,7 +55,7 @@ function resolveSocketUrl(): string {
   return PROD_BACKEND;
 }
 
-/** Backend API base URL (empty in prod = same-origin via Next.js rewrite proxy). */
+/** Backend API base URL for browser fetch (credentials + CORS). */
 export function getPublicApiUrl(): string {
   return resolveApiUrl();
 }

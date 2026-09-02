@@ -1,6 +1,6 @@
 "use client";
 
-import { apiPath, apiFetchInit } from "@/lib/api-base";
+import { apiPath, apiFetchInit, readApiJson } from "@/lib/api-base";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
@@ -54,7 +54,7 @@ export default function HomePage() {
           pin: pin || undefined,
         }),
       });
-      const data = await res.json();
+      const data = await readApiJson<{ code?: string; phase?: string; error?: string }>(res);
       if (!res.ok) throw new Error(data.error ?? "Failed to create room");
       router.push(`/room/${data.code}/lobby`);
     } catch (err) {
@@ -91,9 +91,9 @@ export default function HomePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = await res.json();
+      const data = await readApiJson<{ code?: string; phase?: string; error?: string }>(res);
       if (!res.ok) throw new Error(data.error ?? "Failed to join room");
-      router.push(roomEntryPath(data.code, data.phase));
+      router.push(roomEntryPath(data.code!, data.phase));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
@@ -277,7 +277,10 @@ export default function HomePage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setJoinKind("rejoin")}
+                      onClick={() => {
+                        setJoinKind("rejoin");
+                        if (!rejoinName && displayName) setRejoinName(displayName);
+                      }}
                       className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
                         joinKind === "rejoin"
                           ? "border-fc-gold/60 bg-fc-gold/10 text-fc-gold"

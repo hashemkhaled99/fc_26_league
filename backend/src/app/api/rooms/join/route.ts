@@ -59,7 +59,14 @@ export async function POST(request: Request) {
     if (data.mode === "rejoin") {
       const field = data.rejoinBy;
       const needle = data.name.trim().toLowerCase();
-      const existingUser = room.users.find((u) => u[field].toLowerCase() === needle);
+      const existingUser = await prisma.user.findFirst({
+        where: {
+          roomId: room.id,
+          ...(field === "displayName"
+            ? { displayName: { equals: data.name.trim(), mode: "insensitive" } }
+            : { teamName: { equals: data.name.trim(), mode: "insensitive" } }),
+        },
+      });
 
       if (!existingUser) {
         const label = field === "displayName" ? "display name" : "team name";
