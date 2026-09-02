@@ -34,16 +34,26 @@ export function buildRoundRobinPairs(userIds: string[]): Array<[string, string]>
   return pairs;
 }
 
-export async function generateFixtures(roomId: string, season: number, doubleRound = false) {
+export async function generateFixtures(
+  roomId: string,
+  season: number,
+  doubleRound = false,
+  participantUserIds?: string[]
+) {
   const existing = await prisma.match.count({ where: { roomId, season } });
   if (existing > 0) throw new Error("Fixtures already exist for this season");
 
   const users = await prisma.user.findMany({
-    where: { roomId },
+    where: {
+      roomId,
+      ...(participantUserIds && participantUserIds.length > 0
+        ? { id: { in: participantUserIds } }
+        : {}),
+    },
     select: { id: true },
     orderBy: { createdAt: "asc" },
   });
-  if (users.length < 2) throw new Error("Need at least 2 users to start a league");
+  if (users.length < 2) throw new Error("Need at least 2 clubs to start a league");
 
   let pairs = buildRoundRobinPairs(users.map((u) => u.id));
   if (doubleRound) {
@@ -61,7 +71,7 @@ export async function generateFixtures(roomId: string, season: number, doubleRou
     })),
   });
 
-  return { matches: pairs.length };
+  return { matches: pairs.length, clubs: users.length };
 }
 
 export interface StandingRow {

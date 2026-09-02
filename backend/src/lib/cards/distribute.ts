@@ -12,7 +12,8 @@ const FIXTURE_CARDS_PER_USER = 3;
 async function distributeCards(
   roomId: string,
   category: CardCategory,
-  perUser: number
+  perUser: number,
+  onlyUserIds?: string[]
 ) {
   const settings = await prisma.roomSettings.findUnique({ where: { roomId } });
   const enabledAll = settings?.enabledCardTypes ?? [];
@@ -26,13 +27,21 @@ async function distributeCards(
   const poolKeys = enabled.length > 0 ? enabled : [...defaults];
 
   const users = await prisma.user.findMany({
-    where: { roomId },
+    where: {
+      roomId,
+      ...(onlyUserIds && onlyUserIds.length > 0 ? { id: { in: onlyUserIds } } : {}),
+    },
     select: { id: true },
   });
 
-  // Only clear unused cards of this category
+  // Only clear unused cards of this category (for selected users if filtered)
   await prisma.card.deleteMany({
-    where: { roomId, used: false, category },
+    where: {
+      roomId,
+      used: false,
+      category,
+      ...(onlyUserIds && onlyUserIds.length > 0 ? { ownerId: { in: onlyUserIds } } : {}),
+    },
   });
 
   let dealt = 0;
@@ -69,11 +78,17 @@ export async function distributeTransferCards(
 /** 3 fixture cards each for the whole league (called on Start League). */
 export async function distributeFixtureCards(
   roomId: string,
-  perUser = FIXTURE_CARDS_PER_USER
+  perUser = FIXTURE_CARDS_PER_USER,
+  onlyUserIds?: string[]
 ) {
-  // Don't redeal if users already have unused fixture cards this league
+  // Don't redeal if selected users already have unused fixture cards
   const existing = await prisma.card.count({
-    where: { roomId, category: "fixture", used: false },
+    where: {
+      roomId,
+      category: "fixture",
+      used: false,
+      ...(onlyUserIds && onlyUserIds.length > 0 ? { ownerId: { in: onlyUserIds } } : {}),
+    },
   });
   if (existing > 0) {
     return {
@@ -84,5 +99,5 @@ export async function distributeFixtureCards(
       skipped: true,
     };
   }
-  return distributeCards(roomId, "fixture", perUser);
+  return distributeCards(roomId, "fixture", perUser, onlyUserIds);
 }

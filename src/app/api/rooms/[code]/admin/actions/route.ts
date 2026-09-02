@@ -54,6 +54,8 @@ const schema = z.object({
   awayScore: z.number().int().min(0).max(99).optional(),
   doubleRound: z.boolean().optional(),
   playerName: z.string().min(2).max(80).optional(),
+  force: z.boolean().optional(),
+  userIds: z.array(z.string()).min(2).optional(),
 });
 
 export async function POST(
@@ -268,34 +270,64 @@ export async function POST(
     }
 
     if (data.action === "start_league") {
-      const icons = await iconBoxProgress(room.id, room.currentSeason);
-      if (icons.generated && !icons.allReady) {
-        return apiError(
-          "All users must finish their 4 icon boxes (including squad replacements) first"
-        );
+      const force = Boolean(data.force);
+      const participantIds = data.userIds;
+
+      if (!force) {
+        const icons = await iconBoxProgress(room.id, room.currentSeason);
+        if (icons.generated && !icons.allReady) {
+          return apiError(
+            "All users must finish their 4 icon boxes (including squad replacements) first"
+          );
+        }
+        const heroes = await heroBoxProgress(room.id, room.currentSeason);
+        if (heroes.generated && !heroes.allReady) {
+          return apiError(
+            "All users must finish their 4 hero boxes (including squad replacements) first"
+          );
+        }
       }
-      const heroes = await heroBoxProgress(room.id, room.currentSeason);
-      if (heroes.generated && !heroes.allReady) {
-        return apiError(
-          "All users must finish their 4 hero boxes (including squad replacements) first"
-        );
+
+      if (participantIds && participantIds.length > 0) {
+        const valid = await prisma.user.count({
+          where: { roomId: room.id, id: { in: participantIds } },
+        });
+        if (valid !== participantIds.length) {
+          return apiError("One or more selected clubs are not in this room");
+        }
+        if (participantIds.length < 2) {
+          return apiError("Select at least 2 clubs to start the league");
+        }
+      }
+
+      if (force) {
+        // Allow regenerating fixtures for this season when force-starting
+        await prisma.match.deleteMany({
+          where: { roomId: room.id, season: room.currentSeason },
+        });
       }
 
       await lockTransferWindow(room.id);
       await forceCloseAllAuctions(room.id, room.code);
 
-      const fixtures = await generateFixtures(
-        room.id,
-        room.currentSeason,
-        data.doubleRound ?? false
-      );
+      let fixtures;
+      try {
+        fixtures = await generateFixtures(
+          room.id,
+          room.currentSeason,
+          data.doubleRound ?? false,
+          participantIds
+        );
+      } catch (e) {
+        return apiError(e instanceof Error ? e.message : "Failed to generate fixtures");
+      }
 
       await prisma.room.update({
         where: { id: room.id },
         data: { phase: "league" },
       });
 
-      const fixtureCards = await distributeFixtureCards(room.id, 3);
+      const fixtureCards = await distributeFixtureCards(room.id, 3, participantIds);
 
       await emitToRoom(room.code, "phase:changed", { phase: "league" });
       await emitToRoom(room.code, "league:started", fixtures);
@@ -307,7 +339,9 @@ export async function POST(
       return apiSuccess({
         ...fixtures,
         fixtureCards,
-        message: `League started with ${fixtures.matches} fixtures. Each manager got 3 fixture cards.`,
+        force,
+        participantIds: participantIds ?? null,
+        message: `League started with ${fixtures.clubs} clubs and ${fixtures.matches} fixtures. Each selected manager got 3 fixture cards.`,
       });
     }
 

@@ -118,6 +118,9 @@ export function AdminDashboard({ code }: { code: string }) {
   const [resolveAway, setResolveAway] = useState("0");
   const [assignPlayerName, setAssignPlayerName] = useState("");
   const [assignUserId, setAssignUserId] = useState("");
+  const [leaguePickIds, setLeaguePickIds] = useState<string[] | null>(null);
+  const [leagueDoubleRound, setLeagueDoubleRound] = useState(false);
+  const [showLeaguePicker, setShowLeaguePicker] = useState(false);
 
   const load = useCallback(async () => {
     const res = await fetch(apiPath(`/api/rooms/${code}/admin`), apiFetchInit);
@@ -281,6 +284,141 @@ export function AdminDashboard({ code }: { code: string }) {
           onCancel={() => setConfirm(null)}
           onConfirm={() => runAction(confirm.action, confirm.payload)}
         />
+      )}
+
+      {showLeaguePicker && leaguePickIds && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+          <div className="fc-card flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl sm:rounded-2xl">
+            <div className="overflow-y-auto p-5 sm:p-6">
+              <h3 className="font-display text-xl font-bold text-fc-gold">Force Start League</h3>
+              <p className="mt-1 text-sm text-fc-muted">
+                Choose which clubs enter the league. Skips icon/hero box checks. Closes the market and
+                builds fixtures only for the selected clubs.
+              </p>
+              {!iconsReady && (
+                <p className="mt-2 rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                  Icon/hero boxes are incomplete — force start will ignore that.
+                </p>
+              )}
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="rounded-lg bg-fc-charcoal px-3 py-1.5 text-xs font-semibold"
+                  onClick={() => setLeaguePickIds(users.map((u) => u.id))}
+                >
+                  Select all
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg bg-fc-charcoal px-3 py-1.5 text-xs font-semibold text-fc-muted"
+                  onClick={() => setLeaguePickIds([])}
+                >
+                  Clear
+                </button>
+              </div>
+
+              <ul className="mt-3 space-y-2">
+                {users.map((u) => {
+                  const checked = leaguePickIds.includes(u.id);
+                  return (
+                    <li key={u.id}>
+                      <label
+                        className={`flex cursor-pointer items-center justify-between gap-3 rounded-lg border px-3 py-2.5 ${
+                          checked
+                            ? "border-fc-gold/50 bg-fc-gold/10"
+                            : "border-white/10 bg-fc-charcoal/50"
+                        }`}
+                      >
+                        <span className="flex items-center gap-3 min-w-0">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 accent-fc-gold"
+                            checked={checked}
+                            onChange={() => {
+                              setLeaguePickIds((prev) => {
+                                const cur = prev ?? [];
+                                return checked
+                                  ? cur.filter((id) => id !== u.id)
+                                  : [...cur, u.id];
+                              });
+                            }}
+                          />
+                          <span className="min-w-0">
+                            <span className="block truncate font-semibold">{u.teamName}</span>
+                            <span className="block truncate text-xs text-fc-muted">
+                              {u.displayName}
+                            </span>
+                          </span>
+                        </span>
+                        <span
+                          className={`shrink-0 font-mono text-sm font-bold ${
+                            u.squadCount >= u.squadLimit ? "text-fc-gold" : "text-fc-green"
+                          }`}
+                        >
+                          Squad {u.squadCount}/{u.squadLimit}
+                        </span>
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
+
+              <label className="mt-4 flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="accent-fc-gold"
+                  checked={leagueDoubleRound}
+                  onChange={(e) => setLeagueDoubleRound(e.target.checked)}
+                />
+                Double round (home &amp; away)
+              </label>
+
+              <p className="mt-3 text-xs text-fc-muted">
+                Selected:{" "}
+                <span className="text-fc-gold font-semibold">{leaguePickIds.length}</span> clubs
+                {leaguePickIds.length >= 2
+                  ? ` · ~${
+                      leagueDoubleRound
+                        ? leaguePickIds.length * (leaguePickIds.length - 1)
+                        : (leaguePickIds.length * (leaguePickIds.length - 1)) / 2
+                    } fixtures`
+                  : " · pick at least 2"}
+              </p>
+
+              <div className="mt-5 flex gap-3 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+                <button
+                  type="button"
+                  className="fc-btn-secondary flex-1"
+                  onClick={() => setShowLeaguePicker(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="fc-btn-primary flex-1"
+                  disabled={busy || leaguePickIds.length < 2}
+                  onClick={() => {
+                    setShowLeaguePicker(false);
+                    setConfirm({
+                      title: "Force start league?",
+                      message: `Start the league with ${leaguePickIds.length} clubs (force — skips icon/hero checks). Market closes and fixtures are generated for the selected clubs only.`,
+                      action: "start_league",
+                      danger: true,
+                      payload: {
+                        force: true,
+                        userIds: leaguePickIds,
+                        doubleRound: leagueDoubleRound,
+                      },
+                    });
+                  }}
+                >
+                  Force Start
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {resolveMatch && (
@@ -535,23 +673,15 @@ export function AdminDashboard({ code }: { code: string }) {
             </button>
             <button
               type="button"
-              className={`fc-btn-secondary text-sm ${!iconsReady ? "opacity-60" : ""}`}
-              disabled={busy || room.phase === "league" || !iconsReady}
-              title={
-                !iconsReady
-                  ? "Waiting for all users to finish icon boxes"
-                  : "Start the league"
-              }
-              onClick={() =>
-                setConfirm({
-                  title: "Start League",
-                  message:
-                    "Generates round-robin fixtures and moves the room into league phase. Icon boxes must all be completed first (if generated).",
-                  action: "start_league",
-                })
-              }
+              className="fc-btn-primary text-sm"
+              disabled={busy || room.phase === "league"}
+              onClick={() => {
+                setLeaguePickIds(users.map((u) => u.id));
+                setLeagueDoubleRound(false);
+                setShowLeaguePicker(true);
+              }}
             >
-              Start League
+              Start League…
             </button>
             {room.phase === "bidding" && (
               <button
