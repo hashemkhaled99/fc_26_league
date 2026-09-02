@@ -18,7 +18,7 @@ function resolveBackendUrl(value) {
   return normalized;
 }
 
-// Backend URL for server-side API proxy rewrites (not exposed to browser).
+// Server-side rewrite target (browser never sees this for /api when using same-origin).
 const backendProxyUrl = resolveBackendUrl(
   process.env.BACKEND_PROXY_URL || process.env.NEXT_PUBLIC_API_URL
 );
@@ -30,10 +30,11 @@ const socketUrl = resolveBackendUrl(
 const nextConfig = {
   reactStrictMode: true,
   output: "standalone",
-  // Browser talks to the backend URL directly (CORS + credentials).
-  // Rewrites remain as a fallback for relative /api calls.
+  // Same-origin API in the browser so fc26_session cookie stays on the frontend host.
+  // Socket still points at the backend service.
   env: {
-    NEXT_PUBLIC_API_URL: backendProxyUrl,
+    NEXT_PUBLIC_API_URL: "",
+    NEXT_PUBLIC_API_SAME_ORIGIN: "1",
     NEXT_PUBLIC_SOCKET_URL: socketUrl,
   },
   async rewrites() {

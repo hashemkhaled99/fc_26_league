@@ -107,6 +107,9 @@ export default function MarketPage() {
   const loadMarket = useCallback(async () => {
     const res = await apiFetch(`/api/rooms/${code}/market`);
     const payload = await readApiJson<MarketData>(res);
+    if (res.status === 401) {
+      throw new Error("SESSION_EXPIRED");
+    }
     if (!res.ok) {
       throw new Error(payload.error ?? "Failed to load market");
     }
@@ -356,9 +359,17 @@ export default function MarketPage() {
   }
 
   if (error && !data) {
+    const expired = error === "SESSION_EXPIRED" || /not authenticated/i.test(error);
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-red-400">{error}</p>
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-4 text-center">
+        <p className="text-red-400 text-lg font-semibold">
+          {expired ? "Session expired — please re-join the room" : error}
+        </p>
+        {expired && (
+          <Link href="/" className="fc-btn-primary">
+            Re-join league
+          </Link>
+        )}
       </div>
     );
   }

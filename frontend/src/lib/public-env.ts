@@ -13,60 +13,75 @@ function isLocalhostUrl(value: string): boolean {
   return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(value);
 }
 
-/** Frontend/same-origin URLs must not be used for API — Next rewrites return plain-text 500s. */
-function isUsableBackendUrl(value: string): boolean {
-  if (!value || isLocalhostUrl(value)) return false;
-  if (/fc26-frontend/i.test(value)) return false;
-  return true;
+function isFrontendUrl(value: string): boolean {
+  return /fc26-frontend/i.test(value);
 }
 
+/**
+ * Browser API base.
+ * Empty string = same-origin `/api/*` (Next rewrite → backend). That keeps the
+ * session cookie on the frontend host so auth works. Absolute backend URLs are
+ * cross-site and break login unless FRONTEND_URL + SameSite=None are perfect.
+ */
 function resolveApiUrl(): string {
-  const value = normalizeUrl(process.env.NEXT_PUBLIC_API_URL);
-  if (isUsableBackendUrl(value)) return value;
+  const raw = normalizeUrl(process.env.NEXT_PUBLIC_API_URL);
 
-  if (process.env.NODE_ENV !== "production") {
-    if (!devApiWarningShown) {
-      devApiWarningShown = true;
-      console.warn(
-        `[fc26] NEXT_PUBLIC_API_URL is unset — using dev fallback "${DEV_BACKEND}".`,
-      );
-    }
-    return DEV_BACKEND;
+  // Explicit same-origin
+  if (raw === "" || process.env.NEXT_PUBLIC_API_SAME_ORIGIN === "1") {
+    return "";
   }
 
-  // Never return "" (same-origin). Rewrites yield non-JSON 500/503 bodies.
-  return PROD_BACKEND;
+  // Misconfigured: frontend URL or blank → same-origin
+  if (!raw || isFrontendUrl(raw)) {
+    return process.env.NODE_ENV === "production" ? "" : DEV_BACKEND;
+  }
+
+  if (isLocalhostUrl(raw)) {
+    if (process.env.NODE_ENV !== "production") {
+      if (!devApiWarningShown) {
+        devApiWarningShown = true;
+        console.warn(
+          `[fc26] NEXT_PUBLIC_API_URL is localhost — using "${DEV_BACKEND}".`,
+        );
+      }
+      return DEV_BACKEND;
+    }
+    // Prod build with localhost leftover → same-origin rewrite
+    return "";
+  }
+
+  // Absolute backend URL (legacy / explicit). Prefer same-origin in production
+  // unless NEXT_PUBLIC_API_CROSS_ORIGIN=1.
+  if (process.env.NODE_ENV === "production" && process.env.NEXT_PUBLIC_API_CROSS_ORIGIN !== "1") {
+    return "";
+  }
+
+  return raw;
 }
 
 function resolveSocketUrl(): string {
   const value = normalizeUrl(process.env.NEXT_PUBLIC_SOCKET_URL);
-  if (isUsableBackendUrl(value)) return value;
+  if (value && !isLocalhostUrl(value) && !isFrontendUrl(value)) return value;
 
   if (process.env.NODE_ENV !== "production") {
     if (!devSocketWarningShown) {
       devSocketWarningShown = true;
       console.warn(
-        `[fc26] NEXT_PUBLIC_SOCKET_URL is unset — using dev fallback "${DEV_BACKEND}".`,
+        `[fc26] NEXT_PUBLIC_SOCKET_URL unset — using "${DEV_BACKEND}".`,
       );
     }
     return DEV_BACKEND;
   }
 
-  if (value && (isLocalhostUrl(value) || /fc26-frontend/i.test(value))) {
-    console.warn(
-      "[fc26] NEXT_PUBLIC_SOCKET_URL is invalid in production; using deployed backend URL instead.",
-    );
-  }
-
   return PROD_BACKEND;
 }
 
-/** Backend API base URL for browser fetch (credentials + CORS). */
+/** Backend API base URL. Empty = same-origin `/api` via Next rewrite. */
 export function getPublicApiUrl(): string {
   return resolveApiUrl();
 }
 
-/** Socket.io server URL (inlined at build time via NEXT_PUBLIC_SOCKET_URL). */
+/** Socket.io server URL (always absolute backend in production). */
 export function getPublicSocketUrl(): string {
   return resolveSocketUrl();
 }
