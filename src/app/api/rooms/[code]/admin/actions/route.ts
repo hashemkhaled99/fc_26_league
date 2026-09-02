@@ -12,6 +12,7 @@ import {
   restoreSquadsFromClosedAuctions,
 } from "@/lib/auction/close";
 import { notifyBudgetUpdated, setRoomUserBudget } from "@/lib/admin/users";
+import { forceAssignPlayer } from "@/lib/admin/assignPlayer";
 import { applyBotBoost } from "@/lib/league/botBoost";
 import { generateIconBoxes, generateHeroBoxes, iconBoxProgress, heroBoxProgress } from "@/lib/icons/generate";
 import { generateFixtures, applyMatchStreaks } from "@/lib/league/fixtures";
@@ -43,6 +44,7 @@ const schema = z.object({
     "reset_pin",
     "promote_admin",
     "set_user_budget",
+    "force_assign_player",
   ]),
   minutes: z.number().int().min(1).max(240).optional(),
   userId: z.string().optional(),
@@ -51,6 +53,7 @@ const schema = z.object({
   homeScore: z.number().int().min(0).max(99).optional(),
   awayScore: z.number().int().min(0).max(99).optional(),
   doubleRound: z.boolean().optional(),
+  playerName: z.string().min(2).max(80).optional(),
 });
 
 export async function POST(
@@ -449,6 +452,35 @@ export async function POST(
         budget: data.budget,
         message: `Budget set to ${data.budget / 1_000_000}M for ${target.teamName}`,
       });
+    }
+
+    if (data.action === "force_assign_player") {
+      if (!data.userId || !data.playerName) {
+        return apiError("userId and playerName required");
+      }
+      try {
+        const result = await forceAssignPlayer({
+          roomId: room.id,
+          playerName: data.playerName,
+          toUserId: data.userId,
+        });
+        await emitToRoom(room.code, "squad:updated", { userId: result.toUserId });
+        if (result.fromUserId && result.fromUserId !== result.toUserId) {
+          await emitToRoom(room.code, "squad:updated", { userId: result.fromUserId });
+        }
+        await emitToRoom(room.code, "market:updated", { reason: "force_assign_player" });
+        const fromLabel = result.fromTeamName
+          ? ` (was with ${result.fromTeamName})`
+          : result.fromUserId
+            ? ""
+            : " (from market)";
+        return apiSuccess({
+          ...result,
+          message: `Assigned ${result.playerName} to ${result.toTeamName}${fromLabel}.`,
+        });
+      } catch (e) {
+        return apiError(e instanceof Error ? e.message : "Failed to assign player");
+      }
     }
 
     return apiError("Unknown action");

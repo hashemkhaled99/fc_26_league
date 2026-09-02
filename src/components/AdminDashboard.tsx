@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath, apiFetchInit } from "@/lib/api-base";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { RoomLayoutShell } from "@/components/RoomLayoutShell";
@@ -8,6 +9,7 @@ import { StartBiddingButton } from "@/components/StartBiddingButton";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { CARD_TYPES } from "@/lib/cards/types";
 import { formatMoney } from "@/lib/utils";
+import { getPublicSocketUrl } from "@/lib/public-env";
 import { bidTimerSecondsToHours, hoursToBidTimerSeconds } from "@/lib/format-duration";
 
 interface AdminUser {
@@ -114,9 +116,11 @@ export function AdminDashboard({ code }: { code: string }) {
   } | null>(null);
   const [resolveHome, setResolveHome] = useState("0");
   const [resolveAway, setResolveAway] = useState("0");
+  const [assignPlayerName, setAssignPlayerName] = useState("");
+  const [assignUserId, setAssignUserId] = useState("");
 
   const load = useCallback(async () => {
-    const res = await fetch(`/api/rooms/${code}/admin`);
+    const res = await fetch(apiPath(`/api/rooms/${code}/admin`), apiFetchInit);
     const text = await res.text();
     const json = text ? JSON.parse(text) : {};
     if (!res.ok) throw new Error(json.error ?? "Failed to load admin");
@@ -153,7 +157,7 @@ export function AdminDashboard({ code }: { code: string }) {
   }, [load]);
 
   useEffect(() => {
-    const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL ?? "http://localhost:3001";
+    const socketUrl = getPublicSocketUrl();
     let active = true;
     import("socket.io-client").then(({ io }) => {
       if (!active) return;
@@ -182,7 +186,8 @@ export function AdminDashboard({ code }: { code: string }) {
     setBusy(true);
     setError("");
     try {
-      const res = await fetch(`/api/rooms/${code}/admin/settings`, {
+      const res = await fetch(apiPath(`/api/rooms/${code}/admin/settings`), {
+        ...apiFetchInit,
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -208,7 +213,8 @@ export function AdminDashboard({ code }: { code: string }) {
     setBusy(true);
     setError("");
     try {
-      const res = await fetch(`/api/rooms/${code}/admin/actions`, {
+      const res = await fetch(apiPath(`/api/rooms/${code}/admin/actions`), {
+        ...apiFetchInit,
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, ...payload }),
@@ -933,6 +939,61 @@ export function AdminDashboard({ code }: { code: string }) {
                 );
               })}
             </div>
+          </div>
+        </GlowCard>
+
+        {/* Force assign player */}
+        <GlowCard>
+          <h2 className="font-display text-lg font-semibold mb-2">Force Assign Player</h2>
+          <p className="text-sm text-fc-muted mb-4">
+            Move a player onto a manager&apos;s squad (no budget change). Cancels any live auction for
+            that player. Use e.g. <span className="text-fc-gold">Vini</span> →{" "}
+            <span className="text-fc-gold">AboJoToussef</span>.
+          </p>
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-fc-muted uppercase">Player name</span>
+              <input
+                className="fc-input w-48 py-2 text-sm"
+                placeholder="Vini"
+                value={assignPlayerName}
+                onChange={(e) => setAssignPlayerName(e.target.value)}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-fc-muted uppercase">To manager</span>
+              <select
+                className="fc-input w-56 py-2 text-sm"
+                value={assignUserId}
+                onChange={(e) => setAssignUserId(e.target.value)}
+              >
+                <option value="">Select manager…</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.teamName} ({u.displayName})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="fc-btn-primary"
+              disabled={busy || !assignPlayerName.trim() || !assignUserId}
+              onClick={() => {
+                const target = users.find((u) => u.id === assignUserId);
+                setConfirm({
+                  title: "Force assign player?",
+                  message: `Assign "${assignPlayerName.trim()}" to ${target?.teamName ?? "manager"} (${target?.displayName ?? ""}). No money changes hands.`,
+                  action: "force_assign_player",
+                  payload: {
+                    playerName: assignPlayerName.trim(),
+                    userId: assignUserId,
+                  },
+                });
+              }}
+            >
+              Assign
+            </button>
           </div>
         </GlowCard>
 
