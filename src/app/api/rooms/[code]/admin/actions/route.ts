@@ -197,7 +197,7 @@ export async function POST(
       await emitToRoom(room.code, "lobby:updated", {});
       return apiSuccess({
         ...result,
-        message: `Returned ${result.releasedPlayers} players to market (refunded ${Math.round(result.refundedBudget / 1_000_000)}M). Deadline set to 9:45 PM. Cancelled ${result.cancelledAuctions} auctions.`,
+        message: `Returned ${result.releasedPlayers} players to market (refunded ${Math.round(result.refundedBudget / 1_000_000)}M). Deadline set to 1:30 AM. Cancelled ${result.cancelledAuctions} auctions.`,
       });
     }
 
@@ -215,7 +215,7 @@ export async function POST(
       await emitToRoom(room.code, "market:updated", { reason: "force_deadline_930" });
       return apiSuccess({
         ...result,
-        message: `Synced ${result.listings} listings and ${result.auctions} live auctions to 9:45 PM.`,
+        message: `Synced ${result.listings} listings and ${result.auctions} live auctions to 1:30 AM.`,
       });
     }
 

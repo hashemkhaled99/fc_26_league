@@ -87,7 +87,7 @@ export function DeadlineBanner({
               ? "⚠ Final 5 minutes"
               : inDeadline
                 ? "Deadline Day — faster timers"
-                : "Market closes at 9:45 PM — time remaining"}
+                : "Market closes at 1:30 AM — time remaining"}
           </p>
           <p
             className={`font-mono text-3xl font-bold tabular-nums ${

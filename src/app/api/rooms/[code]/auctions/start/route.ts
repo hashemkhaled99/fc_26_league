@@ -42,7 +42,7 @@ export async function POST(
     const rebidRound = room.settings?.rebidRoundEnabled ?? false;
 
     if (!rebidRound && isPastMarketDeadline()) {
-      return apiError("Market deadline (9:45 PM) has passed");
+      return apiError("Market deadline (1:30 AM) has passed");
     }
 
     const player = await prisma.player.findFirst({

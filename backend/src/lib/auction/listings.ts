@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { setAuctionEnd } from "@/lib/timerStore";
-import { MARKET_DEADLINE_HOUR, MARKET_DEADLINE_MINUTE, REBID_TIMER_SECONDS } from "@/lib/auction/constants";
+import { MARKET_DEADLINE_HOUR, MARKET_DEADLINE_MINUTE, REBID_TIMER_SECONDS, RESALE_TIMER_SECONDS } from "@/lib/auction/constants";
 
 /** Minutes east of UTC for market windows (default UTC+3). Override with LISTING_TZ_OFFSET_MINUTES. */
 function getListingTzOffsetMs(): number {
@@ -9,7 +9,7 @@ function getListingTzOffsetMs(): number {
 }
 
 /**
- * End of the current market day: next 9:45 PM in the listing timezone.
+ * End of the current market day: next 1:30 AM in the listing timezone.
  * All available players and live auctions share this fixed deadline.
  */
 export function getMarketWindowEnd(from = new Date()): Date {
@@ -23,8 +23,8 @@ export function getMarketWindowEnd(from = new Date()): Date {
   const hour = d.getUTCHours();
   const minute = d.getUTCMinutes();
 
-  const deadlineHour = Number.isFinite(MARKET_DEADLINE_HOUR) ? MARKET_DEADLINE_HOUR : 21;
-  const deadlineMinute = Number.isFinite(MARKET_DEADLINE_MINUTE) ? MARKET_DEADLINE_MINUTE : 45;
+  const deadlineHour = Number.isFinite(MARKET_DEADLINE_HOUR) ? MARKET_DEADLINE_HOUR : 1;
+  const deadlineMinute = Number.isFinite(MARKET_DEADLINE_MINUTE) ? MARKET_DEADLINE_MINUTE : 30;
   let targetDay = day;
   if (hour > deadlineHour || (hour === deadlineHour && minute >= deadlineMinute)) {
     targetDay = day + 1;
@@ -131,18 +131,17 @@ export async function ensureListingDeadlines(roomId: string): Promise<number> {
   return result.count;
 }
 
-/** Pull stale/old shared-window auction timers to 9:45 PM; keep short rebid timers and snipe extensions. */
+/** Pull stale/old shared-window auction timers to 1:30 AM; keep short rebid timers and snipes. */
 export async function syncActiveAuctionWindows(roomId: string): Promise<number> {
   const now = new Date();
   const windowEnd = getMarketWindowEnd(now);
   if (windowEnd.getTime() <= now.getTime()) return 0;
 
-  const cacheKey = windowEnd.toISOString();
+  const cacheKey = `deadline:${windowEnd.toISOString()}`;
   if (auctionSyncCache.get(roomId) === cacheKey) return 0;
 
-  // Don't touch short rebid timers (~2 min). Shared market auctions are much longer.
+  // Don't touch short rebid timers (~2 min).
   const minSharedRemainingMs = 5 * 60 * 1000;
-  const staleAfter = new Date(windowEnd.getTime() + 30 * 60 * 1000);
 
   const auctions = await prisma.auction.findMany({
     where: {
@@ -150,9 +149,9 @@ export async function syncActiveAuctionWindows(roomId: string): Promise<number> 
       status: "active",
       endsAt: { gt: now },
       OR: [
-        // Old midnight deadlines past the new window
-        { endsAt: { gt: staleAfter } },
-        // Previous shared window (e.g. 9:00) that should move to 9:45
+        // Anything past the current deadline (e.g. old 9:45 PM) → snap to 1:30 AM
+        { endsAt: { gt: windowEnd } },
+        // Previous earlier shared window that should move forward
         {
           endsAt: {
             lt: windowEnd,
@@ -161,22 +160,59 @@ export async function syncActiveAuctionWindows(roomId: string): Promise<number> 
         },
       ],
     },
-    select: { id: true },
+    select: { id: true, isResale: true, endsAt: true },
   });
 
-  if (auctions.length === 0) {
+  // Leave short resale timers alone if they already end before the deadline.
+  const toUpdate = auctions.filter((a) => {
+    if (!a.isResale) return true;
+    return a.endsAt.getTime() > windowEnd.getTime();
+  });
+
+  if (toUpdate.length === 0) {
     auctionSyncCache.set(roomId, cacheKey);
     return 0;
   }
 
   await prisma.auction.updateMany({
-    where: { id: { in: auctions.map((a) => a.id) } },
+    where: { id: { in: toUpdate.map((a) => a.id) } },
     data: { endsAt: windowEnd },
   });
 
-  await Promise.all(auctions.map((a) => setAuctionEnd(a.id, windowEnd)));
+  await Promise.all(toUpdate.map((a) => setAuctionEnd(a.id, windowEnd)));
   auctionSyncCache.set(roomId, cacheKey);
-  return auctions.length;
+  return toUpdate.length;
+}
+
+/**
+ * Clamp live resale auctions to at most 30 minutes remaining
+ * (also never past the shared market deadline).
+ */
+export async function syncResaleAuctionTimers(roomId: string): Promise<number> {
+  const now = new Date();
+  const windowEnd = getMarketWindowEnd(now);
+  const timedEnd = new Date(now.getTime() + RESALE_TIMER_SECONDS * 1000);
+  const endsAt = timedEnd.getTime() <= windowEnd.getTime() ? timedEnd : windowEnd;
+  if (endsAt.getTime() <= now.getTime()) return 0;
+
+  const resales = await prisma.auction.findMany({
+    where: {
+      roomId,
+      status: "active",
+      isResale: true,
+      endsAt: { gt: endsAt },
+    },
+    select: { id: true },
+  });
+
+  if (resales.length === 0) return 0;
+
+  await prisma.auction.updateMany({
+    where: { id: { in: resales.map((a) => a.id) } },
+    data: { endsAt },
+  });
+  await Promise.all(resales.map((a) => setAuctionEnd(a.id, endsAt)));
+  return resales.length;
 }
 
 /** Fix transfer window if it still points at midnight instead of 9 PM. */
@@ -226,6 +262,7 @@ export async function prepareMarketWindow(
   await Promise.all([
     syncAvailableListingsToMarketWindow(roomId),
     syncActiveAuctionWindows(roomId),
+    syncResaleAuctionTimers(roomId),
     syncRoomTransferWindow(roomId, settings),
   ]);
   return getMarketWindowEnd();
