@@ -1,4 +1,4 @@
-export const SQUAD_LIMIT = 18;
+export const SQUAD_LIMIT = 21;
 export const MAX_STARTERS = 11;
 export const MIN_BID_INCREMENT = 1000000; // 1M
 export const DEFAULT_STARTING_BID = 5_000_000; // 5M
