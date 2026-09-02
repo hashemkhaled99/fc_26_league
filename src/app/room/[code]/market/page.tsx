@@ -570,27 +570,29 @@ export default function MarketPage() {
                   No players match these filters. Try clearing search or filters.
                 </p>
               ) : (
-                <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
-                  {visiblePlayers.map((player, i) => (
-                    <PlayerCard
-                      key={player.id}
-                      index={i}
-                      player={player}
-                      onRequestBid={handleRequestBid}
-                      onListingExpire={reloadMarket}
-                      loading={loadingBid}
-                    />
-                  ))}
-                </div>
-                {!showAllPlayers && filteredPlayers.length > 48 && (
-                  <button
-                    type="button"
-                    className="fc-btn-secondary w-full"
-                    onClick={() => setShowAllPlayers(true)}
-                  >
-                    Show all {filteredPlayers.length} players
-                  </button>
-                )}
+                <>
+                  <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
+                    {visiblePlayers.map((player, i) => (
+                      <PlayerCard
+                        key={player.id}
+                        index={i}
+                        player={player}
+                        onRequestBid={handleRequestBid}
+                        onListingExpire={reloadMarket}
+                        loading={loadingBid}
+                      />
+                    ))}
+                  </div>
+                  {!showAllPlayers && filteredPlayers.length > 48 && (
+                    <button
+                      type="button"
+                      className="fc-btn-secondary w-full"
+                      onClick={() => setShowAllPlayers(true)}
+                    >
+                      Show all {filteredPlayers.length} players
+                    </button>
+                  )}
+                </>
               )}
             </>
           )}
