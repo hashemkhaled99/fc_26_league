@@ -8,8 +8,9 @@ function getListingTzOffsetMs(): number {
 }
 
 /**
- * End of the current 12-hour market window (00:00→12:00 or 12:00→00:00) in the listing timezone.
- * Shared by available players and live auctions.
+ * End of the current market day: next 00:00 (midnight) in the listing timezone.
+ * All available players and live auctions share this deadline (up to ~24h).
+ * After midnight, listings re-open for the next day.
  */
 export function getMarketWindowEnd(from = new Date()): Date {
   const offsetMs = getListingTzOffsetMs();
@@ -20,11 +21,8 @@ export function getMarketWindowEnd(from = new Date()): Date {
   const m = d.getUTCMonth();
   const day = d.getUTCDate();
 
-  const noon = Date.UTC(y, m, day, 12, 0, 0, 0);
   const nextMidnight = Date.UTC(y, m, day + 1, 0, 0, 0, 0);
-
-  const endShifted = shifted < noon ? noon : nextMidnight;
-  return new Date(endShifted - offsetMs);
+  return new Date(nextMidnight - offsetMs);
 }
 
 /** @deprecated Use getMarketWindowEnd */
@@ -51,7 +49,7 @@ export async function initializeAvailableListings(roomId: string): Promise<numbe
 
 /**
  * Keep every available player on the same synchronized window.
- * When a window ends with no auction, players are re-listed for the next 12h window.
+ * When a window ends with no auction, players are re-listed for the next day at midnight.
  */
 export async function refreshAvailableListings(roomId: string): Promise<number> {
   const endsAt = getMarketWindowEnd();
