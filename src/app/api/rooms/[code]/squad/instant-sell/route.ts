@@ -9,7 +9,7 @@ import { emitToRoom } from "@/lib/socket-emit";
 import { apiError, apiSuccess } from "@/lib/api";
 
 /** Instant sell refund = 50% of what the manager paid. */
-export function instantSellRefund(purchasePrice: number): number {
+function instantSellRefund(purchasePrice: number): number {
   return Math.floor(Math.max(0, purchasePrice) / 2);
 }
 
