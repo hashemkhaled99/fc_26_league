@@ -23,6 +23,8 @@ interface FormationBoardProps {
   onPlaceStarter: (squadPlayerId: string) => Promise<void>;
   onBench: (squadPlayerId: string) => Promise<void>;
   onSell: (entry: SquadEntry) => void;
+  /** Opens sell modal focused on Instant Sell (optional). Falls back to onSell. */
+  onInstantSell?: (entry: SquadEntry) => void;
   canResale: boolean;
   busy?: boolean;
 }
@@ -168,6 +170,7 @@ export function FormationBoard({
   onPlaceStarter,
   onBench,
   onSell,
+  onInstantSell,
   canResale,
   busy,
 }: FormationBoardProps) {
@@ -318,20 +321,35 @@ export function FormationBoard({
                 Put in XI
               </button>
             )}
-            {canResale && (
-              <button
-                type="button"
-                disabled={busy}
-                className="rounded-lg bg-fc-charcoal px-3 py-1.5 text-xs font-semibold text-red-300"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  const entry = selectedEntry;
-                  setSelectedId(null);
-                  onSell(entry);
-                }}
-              >
-                Sell
-              </button>
+            {canResale && !selectedEntry.isLoanedIn && !selectedEntry.isLoanedOut && (
+              <>
+                <button
+                  type="button"
+                  disabled={busy}
+                  className="rounded-lg bg-fc-charcoal px-3 py-2 text-xs font-semibold text-red-300"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const entry = selectedEntry;
+                    setSelectedId(null);
+                    onSell(entry);
+                  }}
+                >
+                  Sell / List
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  className="rounded-lg bg-amber-500/20 px-3 py-2 text-xs font-semibold text-amber-200"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const entry = selectedEntry;
+                    setSelectedId(null);
+                    (onInstantSell ?? onSell)(entry);
+                  }}
+                >
+                  Instant Sell
+                </button>
+              </>
             )}
             <button
               type="button"
@@ -566,19 +584,33 @@ export function FormationBoard({
               Put in XI
             </button>
           )}
-          {canResale && (
-            <button
-              type="button"
-              disabled={busy}
-              className="block w-full px-3 py-2.5 text-left text-sm text-red-300 hover:bg-white/5 disabled:opacity-50"
-              onClick={() => {
-                const entry = menu.entry;
-                setMenu(null);
-                onSell(entry);
-              }}
-            >
-              Sell
-            </button>
+          {canResale && !menu.entry.isLoanedIn && !menu.entry.isLoanedOut && (
+            <>
+              <button
+                type="button"
+                disabled={busy}
+                className="block w-full px-3 py-2.5 text-left text-sm text-red-300 hover:bg-white/5 disabled:opacity-50"
+                onClick={() => {
+                  const entry = menu.entry;
+                  setMenu(null);
+                  onSell(entry);
+                }}
+              >
+                Sell / List on market
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                className="block w-full px-3 py-2.5 text-left text-sm text-amber-200 hover:bg-white/5 disabled:opacity-50"
+                onClick={() => {
+                  const entry = menu.entry;
+                  setMenu(null);
+                  (onInstantSell ?? onSell)(entry);
+                }}
+              >
+                Instant Sell (50%)
+              </button>
+            </>
           )}
           <button
             type="button"

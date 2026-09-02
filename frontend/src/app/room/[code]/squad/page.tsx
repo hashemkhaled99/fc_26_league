@@ -64,6 +64,7 @@ export default function SquadPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [resaleTarget, setResaleTarget] = useState<SquadEntry | null>(null);
+  const [preferInstantSell, setPreferInstantSell] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [boostBanner, setBoostBanner] = useState<
     Array<{ name: string; from: number; to: number; statsLabel: string; position: string }> | null
@@ -437,7 +438,11 @@ export default function SquadPage() {
       {resaleTarget && (
         <ResaleModal
           entry={resaleTarget}
-          onClose={() => setResaleTarget(null)}
+          preferInstant={preferInstantSell}
+          onClose={() => {
+            setResaleTarget(null);
+            setPreferInstantSell(false);
+          }}
           onConfirm={confirmResale}
           onInstantSell={confirmInstantSell}
         />
@@ -449,7 +454,7 @@ export default function SquadPage() {
             <div>
               <h2 className="font-display text-2xl font-bold">Your Squad</h2>
               <p className="text-sm text-fc-muted mt-1">
-                Pick a formation · drag players on desktop · on mobile tap a player then tap a slot
+                Pick a formation · drag on desktop · on mobile tap a player, then Sell / Instant Sell
               </p>
             </div>
             <div className="flex gap-6 text-right">
@@ -496,7 +501,14 @@ export default function SquadPage() {
             canResale={canResale}
             onPlaceStarter={(id) => toggleStarter(id, true)}
             onBench={(id) => toggleStarter(id, false)}
-            onSell={setResaleTarget}
+            onSell={(entry) => {
+              setPreferInstantSell(false);
+              setResaleTarget(entry);
+            }}
+            onInstantSell={(entry) => {
+              setPreferInstantSell(true);
+              setResaleTarget(entry);
+            }}
           />
         )}
       </div>

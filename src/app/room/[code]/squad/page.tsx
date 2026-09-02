@@ -1,8 +1,10 @@
 "use client";
 
+import { apiPath, apiFetchInit } from "@/lib/api-base";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
+import Link from "next/link";
 import { RoomLayoutShell } from "@/components/RoomLayoutShell";
 import { GlowCard } from "@/components/GlowCard";
 import { FormationBoard, reconcileSlotMap } from "@/components/FormationBoard";
@@ -11,6 +13,7 @@ import { ResaleModal } from "@/components/ResaleModal";
 import { formatMoney } from "@/lib/utils";
 import type { FormationId } from "@/lib/formations";
 import { onBudgetUpdated } from "@/lib/room-socket";
+import { getPublicSocketUrl } from "@/lib/public-env";
 
 interface SquadData {
   room: { code: string; name: string; phase: string };
@@ -61,6 +64,7 @@ export default function SquadPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [resaleTarget, setResaleTarget] = useState<SquadEntry | null>(null);
+  const [preferInstantSell, setPreferInstantSell] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [boostBanner, setBoostBanner] = useState<
     Array<{ name: string; from: number; to: number; statsLabel: string; position: string }> | null
@@ -95,7 +99,8 @@ export default function SquadPage() {
   );
 
   const loadSquad = useCallback(async () => {
-    const res = await fetch(`/api/rooms/${code}/squad`);
+    const { apiFetch } = await import("@/lib/api-base");
+    const res = await apiFetch(`/api/rooms/${code}/squad`);
     const text = await res.text();
     let payload: SquadData & { error?: string };
     try {
@@ -123,6 +128,7 @@ export default function SquadPage() {
         applySquad(squad, { refillEmpty: true });
         setError("");
       } catch (e) {
+        // One short retry — backend often recovers after pool backoff.
         await new Promise((r) => setTimeout(r, 1500));
         if (cancelled || gen !== loadGen.current) return;
         try {
@@ -144,7 +150,7 @@ export default function SquadPage() {
 
   // Stable socket — do not reconnect when data/formation changes
   useEffect(() => {
-    const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL ?? "http://localhost:3001";
+    const socketUrl = getPublicSocketUrl();
     let socket: { disconnect: () => void } | null = null;
 
     import("socket.io-client").then(({ io }) => {
@@ -261,15 +267,22 @@ export default function SquadPage() {
     });
   }
 
-  async function toggleStarter(squadPlayerId: string, isStarting: boolean) {
+  async function toggleStarter(entryId: string, isStarting: boolean) {
     setBusy(true);
     setError("");
-    optimisticMove(squadPlayerId, isStarting);
+    optimisticMove(entryId, isStarting);
     try {
-      const res = await fetch(`/api/rooms/${code}/squad/toggle-starter`, {
+      const all = data ? [...data.starters, ...data.bench] : [];
+      const entry = all.find((e) => e.id === entryId);
+      const body = entry?.loanId
+        ? { loanId: entry.loanId, isStarting }
+        : { squadPlayerId: entryId, isStarting };
+
+      const res = await fetch(apiPath(`/api/rooms/${code}/squad/toggle-starter`), {
+        ...apiFetchInit,
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ squadPlayerId, isStarting }),
+        body: JSON.stringify(body),
       });
       const result = await res.json();
       if (!res.ok) throw new Error(result.error ?? "Could not update");
@@ -290,7 +303,8 @@ export default function SquadPage() {
   }
 
   async function confirmResale(squadPlayerId: string, startingPrice: number) {
-    const res = await fetch(`/api/rooms/${code}/squad/resale`, {
+    const res = await fetch(apiPath(`/api/rooms/${code}/squad/resale`), {
+      ...apiFetchInit,
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ squadPlayerId, startingPrice }),
@@ -304,7 +318,8 @@ export default function SquadPage() {
   }
 
   async function confirmInstantSell(squadPlayerId: string) {
-    const res = await fetch(`/api/rooms/${code}/squad/instant-sell`, {
+    const res = await fetch(apiPath(`/api/rooms/${code}/squad/instant-sell`), {
+      ...apiFetchInit,
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ squadPlayerId }),
@@ -322,8 +337,25 @@ export default function SquadPage() {
 
   if (error && !data) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-red-400">{error}</p>
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-4 text-center">
+        <p className="text-red-400 max-w-md">{error}</p>
+        <button
+          type="button"
+          className="fc-btn-primary"
+          onClick={() => {
+            setError("");
+            setData(null);
+            const gen = ++loadGen.current;
+            loadSquad()
+              .then((squad) => {
+                if (gen !== loadGen.current) return;
+                applySquad(squad, { refillEmpty: true });
+              })
+              .catch((e) => setError(e instanceof Error ? e.message : "Failed to load squad"));
+          }}
+        >
+          Retry
+        </button>
       </div>
     );
   }
@@ -406,7 +438,11 @@ export default function SquadPage() {
       {resaleTarget && (
         <ResaleModal
           entry={resaleTarget}
-          onClose={() => setResaleTarget(null)}
+          preferInstant={preferInstantSell}
+          onClose={() => {
+            setResaleTarget(null);
+            setPreferInstantSell(false);
+          }}
           onConfirm={confirmResale}
           onInstantSell={confirmInstantSell}
         />
@@ -418,7 +454,7 @@ export default function SquadPage() {
             <div>
               <h2 className="font-display text-2xl font-bold">Your Squad</h2>
               <p className="text-sm text-fc-muted mt-1">
-                Pick a formation · drag players onto slots · tap a card for Bench / Sell
+                Pick a formation · drag on desktop · on mobile tap a player, then Sell / Instant Sell
               </p>
             </div>
             <div className="flex gap-6 text-right">
@@ -465,7 +501,14 @@ export default function SquadPage() {
             canResale={canResale}
             onPlaceStarter={(id) => toggleStarter(id, true)}
             onBench={(id) => toggleStarter(id, false)}
-            onSell={setResaleTarget}
+            onSell={(entry) => {
+              setPreferInstantSell(false);
+              setResaleTarget(entry);
+            }}
+            onInstantSell={(entry) => {
+              setPreferInstantSell(true);
+              setResaleTarget(entry);
+            }}
           />
         )}
       </div>
