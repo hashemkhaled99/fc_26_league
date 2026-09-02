@@ -39,7 +39,13 @@ async function handleHealth(res: ServerResponse) {
 
   try {
     const { prisma } = await import("./src/lib/prisma");
-    await prisma.$queryRaw`SELECT 1`;
+    // Don't hang health forever if the pool is exhausted.
+    await Promise.race([
+      prisma.$queryRaw`SELECT 1`,
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("health db timeout")), 2000)
+      ),
+    ]);
     db = true;
   } catch {
     db = false;
@@ -50,12 +56,12 @@ async function handleHealth(res: ServerResponse) {
     redis = await pingRedis();
   }
 
-  const body: Record<string, unknown> = { status: "ok", db };
+  const body: Record<string, unknown> = { status: db ? "ok" : "degraded", db };
   if (process.env.REDIS_URL) {
     body.redis = redis;
   }
 
-  res.writeHead(200, { "Content-Type": "application/json" });
+  res.writeHead(db ? 200 : 503, { "Content-Type": "application/json" });
   res.end(JSON.stringify(body));
 }
 
@@ -129,9 +135,11 @@ async function main() {
   });
 
   let auctionCloserRunning = false;
+  let auctionCloserPauseUntil = 0;
 
   async function runAuctionCloser() {
     if (auctionCloserRunning) return;
+    if (Date.now() < auctionCloserPauseUntil) return;
     auctionCloserRunning = true;
     try {
       const { getExpiredAuctionIds, clearAuctionEnd } = await import("./src/lib/timerStore");
@@ -142,7 +150,7 @@ async function main() {
       const dbExpired = await prisma.auction.findMany({
         where: { status: "active", endsAt: { lte: new Date() } },
         select: { id: true },
-        take: 5,
+        take: 3,
       });
 
       const expiredIds = Array.from(new Set([...memoryExpired, ...dbExpired.map((a) => a.id)]));
@@ -163,7 +171,13 @@ async function main() {
           }
         } catch (err) {
           console.error(`Auction closer error for ${auctionId}:`, err);
-          // Stop infinite retry loops that exhaust the DB pool (P2002 / P2024).
+          const msg = err instanceof Error ? err.message : String(err);
+          if (msg.includes("P2024") || msg.includes("Timed out fetching")) {
+            // Pool exhausted — back off so API routes (squad/market) can recover.
+            auctionCloserPauseUntil = Date.now() + 30_000;
+            console.error("Auction closer paused 30s due to DB pool pressure");
+            break;
+          }
           try {
             await abandonAuctionToMarket(auctionId);
             await clearAuctionEnd(auctionId);
@@ -174,6 +188,10 @@ async function main() {
       }
     } catch (err) {
       console.error("Auction closer error:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("P2024") || msg.includes("Timed out fetching")) {
+        auctionCloserPauseUntil = Date.now() + 30_000;
+      }
     } finally {
       auctionCloserRunning = false;
     }

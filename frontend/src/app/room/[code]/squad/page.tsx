@@ -98,7 +98,8 @@ export default function SquadPage() {
   );
 
   const loadSquad = useCallback(async () => {
-    const res = await fetch(apiPath(`/api/rooms/${code}/squad`), apiFetchInit);
+    const { apiFetch } = await import("@/lib/api-base");
+    const res = await apiFetch(`/api/rooms/${code}/squad`);
     const text = await res.text();
     let payload: SquadData & { error?: string };
     try {
@@ -314,8 +315,25 @@ export default function SquadPage() {
 
   if (error && !data) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-red-400">{error}</p>
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-4 text-center">
+        <p className="text-red-400 max-w-md">{error}</p>
+        <button
+          type="button"
+          className="fc-btn-primary"
+          onClick={() => {
+            setError("");
+            setData(null);
+            const gen = ++loadGen.current;
+            loadSquad()
+              .then((squad) => {
+                if (gen !== loadGen.current) return;
+                applySquad(squad, { refillEmpty: true });
+              })
+              .catch((e) => setError(e instanceof Error ? e.message : "Failed to load squad"));
+          }}
+        >
+          Retry
+        </button>
       </div>
     );
   }
