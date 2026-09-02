@@ -12,8 +12,8 @@ export const LISTING_DURATION_SECONDS = MAX_BID_TIMER_SECONDS;
 
 /** Shared market deadline hour in listing timezone (21 = 9 PM). Override with MARKET_DEADLINE_HOUR. */
 export const MARKET_DEADLINE_HOUR = parseInt(process.env.MARKET_DEADLINE_HOUR ?? "21", 10);
-/** Shared market deadline minute (30 = :30). Override with MARKET_DEADLINE_MINUTE. */
-export const MARKET_DEADLINE_MINUTE = parseInt(process.env.MARKET_DEADLINE_MINUTE ?? "30", 10);
+/** Shared market deadline minute (45 = :45). Override with MARKET_DEADLINE_MINUTE. */
+export const MARKET_DEADLINE_MINUTE = parseInt(process.env.MARKET_DEADLINE_MINUTE ?? "45", 10);
 
 /** Short timer for the post-deadline rebid round (un-bid players only). */
 export const REBID_TIMER_SECONDS = 120;

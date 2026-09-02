@@ -9,7 +9,7 @@ function getListingTzOffsetMs(): number {
 }
 
 /**
- * End of the current market day: next 9:30 PM in the listing timezone.
+ * End of the current market day: next 9:45 PM in the listing timezone.
  * All available players and live auctions share this fixed deadline.
  */
 export function getMarketWindowEnd(from = new Date()): Date {
@@ -24,7 +24,7 @@ export function getMarketWindowEnd(from = new Date()): Date {
   const minute = d.getUTCMinutes();
 
   const deadlineHour = Number.isFinite(MARKET_DEADLINE_HOUR) ? MARKET_DEADLINE_HOUR : 21;
-  const deadlineMinute = Number.isFinite(MARKET_DEADLINE_MINUTE) ? MARKET_DEADLINE_MINUTE : 30;
+  const deadlineMinute = Number.isFinite(MARKET_DEADLINE_MINUTE) ? MARKET_DEADLINE_MINUTE : 45;
   let targetDay = day;
   if (hour > deadlineHour || (hour === deadlineHour && minute >= deadlineMinute)) {
     targetDay = day + 1;
@@ -131,7 +131,7 @@ export async function ensureListingDeadlines(roomId: string): Promise<number> {
   return result.count;
 }
 
-/** Pull stale/old shared-window auction timers to 9:30 PM; keep short rebid timers and snipe extensions. */
+/** Pull stale/old shared-window auction timers to 9:45 PM; keep short rebid timers and snipe extensions. */
 export async function syncActiveAuctionWindows(roomId: string): Promise<number> {
   const now = new Date();
   const windowEnd = getMarketWindowEnd(now);
@@ -152,7 +152,7 @@ export async function syncActiveAuctionWindows(roomId: string): Promise<number> 
       OR: [
         // Old midnight deadlines past the new window
         { endsAt: { gt: staleAfter } },
-        // Previous shared window (e.g. 9:00) that should move to 9:30
+        // Previous shared window (e.g. 9:00) that should move to 9:45
         {
           endsAt: {
             lt: windowEnd,

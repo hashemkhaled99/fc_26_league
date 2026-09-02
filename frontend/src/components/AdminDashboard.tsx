@@ -344,7 +344,7 @@ export function AdminDashboard({ code }: { code: string }) {
             {room.phase === "bidding" && (
               <>
                 {" · "}
-                <span className="text-fc-gold">Market deadline: 9:30 PM</span>
+                <span className="text-fc-gold">Market deadline: 9:45 PM</span>
                 {settings.rebidRoundEnabled && (
                   <span className="text-amber-400"> · Rebid round active (2 min timers)</span>
                 )}
@@ -394,13 +394,13 @@ export function AdminDashboard({ code }: { code: string }) {
                     setConfirm({
                       title: "Return All Players to Market",
                       message:
-                        "Cancels all live auctions, removes every regular player from all squads, refunds each manager their purchase price, and lists everyone on the market until 9:30 PM. Icons/Heroes stay. This cannot be undone.",
+                        "Cancels all live auctions, removes every regular player from all squads, refunds each manager their purchase price, and lists everyone on the market until 9:45 PM. Icons/Heroes stay. This cannot be undone.",
                       action: "return_all_to_market",
                       danger: true,
                     })
                   }
                 >
-                  Return All to Market (9:30)
+                  Return All to Market (9:45)
                 </button>
                 <button
                   type="button"
@@ -408,14 +408,14 @@ export function AdminDashboard({ code }: { code: string }) {
                   disabled={busy}
                   onClick={() =>
                     setConfirm({
-                      title: "Force Deadline 9:30 PM",
+                      title: "Force Deadline 9:45 PM",
                       message:
-                        "Sets every available listing and live auction timer to end at 9:30 PM without clearing squads.",
+                        "Sets every available listing and live auction timer to end at 9:45 PM without clearing squads.",
                       action: "force_deadline_930",
                     })
                   }
                 >
-                  Sync Timers → 9:30 PM
+                  Sync Timers → 9:45 PM
                 </button>
                 {!settings.rebidRoundEnabled && (
                   <button
@@ -426,7 +426,7 @@ export function AdminDashboard({ code }: { code: string }) {
                       setConfirm({
                         title: "Enable Rebid Round",
                         message:
-                          "Opens a second-chance round for players that were never bid on. Anyone can request a bid — each auction gets a fixed 2-minute timer (+30s if bid in the last minute). Best used after the 9:30 PM deadline or Force Close Market.",
+                          "Opens a second-chance round for players that were never bid on. Anyone can request a bid — each auction gets a fixed 2-minute timer (+30s if bid in the last minute). Best used after the 9:45 PM deadline or Force Close Market.",
                         action: "enable_rebid_round",
                       })
                     }

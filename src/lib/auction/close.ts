@@ -292,7 +292,7 @@ export async function closeAuction(auctionId: string): Promise<ClosedAuctionResu
 
 /**
  * Emergency repair: cancel live auctions, clear all regular squads (refund purchase price),
- * put every non-icon/non-hero player back on the market with the shared 9:30 PM deadline.
+ * put every non-icon/non-hero player back on the market with the shared 9:45 PM deadline.
  */
 export async function returnAllPlayersToMarket(roomId: string): Promise<{
   cancelledAuctions: number;
@@ -381,7 +381,7 @@ export async function returnAllPlayersToMarket(roomId: string): Promise<{
   };
 }
 
-/** Push every live auction + available listing to the shared 9:30 PM window. */
+/** Push every live auction + available listing to the shared 9:45 PM window. */
 export async function forceMarketDeadline(roomId: string): Promise<{
   listings: number;
   auctions: number;
