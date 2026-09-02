@@ -144,7 +144,9 @@ export function ResaleModal({
                 <span className="font-bold text-fc-green">M</span>
               </div>
               <p className="mt-1 text-xs text-fc-muted">
-                Asking {formatMoney(Math.max(1, priceM) * 1_000_000)} — first bid can take this price
+                Asking {formatMoney(Math.max(1, priceM) * 1_000_000)} — auction runs for{" "}
+                <span className="text-fc-gold font-semibold">30 minutes</span> (or until the market
+                deadline if sooner)
               </p>
             </div>
 

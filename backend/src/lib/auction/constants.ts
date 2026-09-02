@@ -18,6 +18,9 @@ export const MARKET_DEADLINE_MINUTE = parseInt(process.env.MARKET_DEADLINE_MINUT
 /** Short timer for the post-deadline rebid round (un-bid players only). */
 export const REBID_TIMER_SECONDS = 120;
 
+/** Fixed timer when a manager lists a squad player for resale. */
+export const RESALE_TIMER_SECONDS = 30 * 60;
+
 /** Only extend the auction clock when this many seconds or less remain. */
 export const BID_EXTEND_THRESHOLD_SEC = 60;
 /** Seconds added per bid during the final minute. */

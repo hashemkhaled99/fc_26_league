@@ -2,10 +2,12 @@ import { z } from "zod";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { isMarketLocked } from "@/lib/auction/close";
-import { getMarketWindowEnd, secondsUntilMarketWindowEnd } from "@/lib/auction/listings";
+import { getMarketWindowEnd } from "@/lib/auction/listings";
+import { RESALE_TIMER_SECONDS } from "@/lib/auction/constants";
 import { setAuctionEnd } from "@/lib/timerStore";
 import { emitToRoom } from "@/lib/socket-emit";
 import { apiError, apiSuccess } from "@/lib/api";
+import { getActiveLoanForPlayer } from "@/lib/loans/engine";
 
 const schema = z.object({
   squadPlayerId: z.string(),
@@ -45,13 +47,19 @@ export async function POST(
     if (!entry) return apiError("Player not in your squad");
     if (entry.player.status !== "owned") return apiError("Player cannot be listed");
 
+    const activeLoan = await getActiveLoanForPlayer(entry.playerId);
+    if (activeLoan) return apiError("Cannot list a player who is on loan");
+
     const existingAuction = await prisma.auction.findFirst({
       where: { playerId: entry.playerId, status: "active" },
     });
     if (existingAuction) return apiError("Auction already active for this player");
 
-    const endsAt = getMarketWindowEnd();
-    const timerSeconds = secondsUntilMarketWindowEnd();
+    const windowEnd = getMarketWindowEnd();
+    const timedEnd = new Date(Date.now() + RESALE_TIMER_SECONDS * 1000);
+    // Don't run past the shared market deadline if it comes sooner.
+    const endsAt = timedEnd.getTime() <= windowEnd.getTime() ? timedEnd : windowEnd;
+    const timerSeconds = Math.max(1, Math.ceil((endsAt.getTime() - Date.now()) / 1000));
 
     const seller = await prisma.user.findUnique({
       where: { id: session.userId },
