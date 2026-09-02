@@ -1,6 +1,6 @@
 "use client";
 
-import { apiPath, apiFetchInit } from "@/lib/api-base";
+import { apiPath, apiFetchInit, apiFetch, readApiJson } from "@/lib/api-base";
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
@@ -105,15 +105,8 @@ export default function MarketPage() {
   const [showAllPlayers, setShowAllPlayers] = useState(false);
 
   const loadMarket = useCallback(async () => {
-    const { apiFetch } = await import("@/lib/api-base");
     const res = await apiFetch(`/api/rooms/${code}/market`);
-    const text = await res.text();
-    let payload: MarketData & { error?: string };
-    try {
-      payload = text ? JSON.parse(text) : {};
-    } catch {
-      throw new Error("Market API returned invalid data. Try refreshing.");
-    }
+    const payload = await readApiJson<MarketData>(res);
     if (!res.ok) {
       throw new Error(payload.error ?? "Failed to load market");
     }

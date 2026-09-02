@@ -1,6 +1,6 @@
 "use client";
 
-import { apiPath, apiFetchInit } from "@/lib/api-base";
+import { apiPath, apiFetchInit, readApiJson } from "@/lib/api-base";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -51,8 +51,9 @@ export default function LobbyPage() {
       router.replace("/");
       throw new Error("Session expired");
     }
-    if (!res.ok) throw new Error("Failed to load lobby");
-    return res.json() as Promise<LobbyData>;
+    const payload = await readApiJson<LobbyData>(res);
+    if (!res.ok) throw new Error(payload.error ?? "Failed to load lobby");
+    return payload as LobbyData;
   }
 
   async function removePlayer(user: LobbyUser) {

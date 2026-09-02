@@ -13,9 +13,16 @@ function isLocalhostUrl(value: string): boolean {
   return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(value);
 }
 
+/** Frontend/same-origin URLs must not be used for API — Next rewrites return plain-text 500s. */
+function isUsableBackendUrl(value: string): boolean {
+  if (!value || isLocalhostUrl(value)) return false;
+  if (/fc26-frontend/i.test(value)) return false;
+  return true;
+}
+
 function resolveApiUrl(): string {
   const value = normalizeUrl(process.env.NEXT_PUBLIC_API_URL);
-  if (value && !isLocalhostUrl(value)) return value;
+  if (isUsableBackendUrl(value)) return value;
 
   if (process.env.NODE_ENV !== "production") {
     if (!devApiWarningShown) {
@@ -27,14 +34,13 @@ function resolveApiUrl(): string {
     return DEV_BACKEND;
   }
 
-  // Talk to the backend directly — same-origin Next rewrites were returning
-  // plain-text 500/503 bodies that broke JSON parsing on join/squad.
+  // Never return "" (same-origin). Rewrites yield non-JSON 500/503 bodies.
   return PROD_BACKEND;
 }
 
 function resolveSocketUrl(): string {
   const value = normalizeUrl(process.env.NEXT_PUBLIC_SOCKET_URL);
-  if (value && !isLocalhostUrl(value)) return value;
+  if (isUsableBackendUrl(value)) return value;
 
   if (process.env.NODE_ENV !== "production") {
     if (!devSocketWarningShown) {
@@ -46,9 +52,9 @@ function resolveSocketUrl(): string {
     return DEV_BACKEND;
   }
 
-  if (value && isLocalhostUrl(value)) {
+  if (value && (isLocalhostUrl(value) || /fc26-frontend/i.test(value))) {
     console.warn(
-      "[fc26] NEXT_PUBLIC_SOCKET_URL points at localhost in production; using deployed backend URL instead.",
+      "[fc26] NEXT_PUBLIC_SOCKET_URL is invalid in production; using deployed backend URL instead.",
     );
   }
 
