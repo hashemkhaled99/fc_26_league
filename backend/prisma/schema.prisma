@@ -91,6 +91,7 @@ model Player {
   isHero        Boolean  @default(false)
   squadEntry    SquadPlayer?
   auctions      Auction[]
+  loans         Loan[]
 }
 
 model SquadPlayer {
@@ -151,6 +152,7 @@ model Loan {
   season           Int
   lenderId         String
   borrowerId       String
+  player           Player    @relation(fields: [playerId], references: [id], onDelete: Cascade)
   playerId         String
   loanFee          Int       @default(0)
   fixturesTotal    Int
