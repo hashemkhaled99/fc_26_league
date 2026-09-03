@@ -212,6 +212,13 @@ model Match {
   confirmedById String?
   homeBonusPts  Int     @default(0)
   awayBonusPts  Int     @default(0)
+  /// Locked pre-sim tactics (TeamTactics JSON) — both sides must lock before apply
+  homeSimTactics Json?
+  awaySimTactics Json?
+  homeSimLocked  Boolean @default(false)
+  awaySimLocked  Boolean @default(false)
+  /// Last sim package: { potm, ratings, homeXg, awayXg }
+  simMeta        Json?
 }
 
 model Card {

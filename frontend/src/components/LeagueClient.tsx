@@ -4,6 +4,8 @@ import { apiPath, apiFetchInit } from "@/lib/api-base";
 import { useCallback, useEffect, useState } from "react";
 import { RoomLayoutShell } from "@/components/RoomLayoutShell";
 import { GlowCard } from "@/components/GlowCard";
+import { MatchSimModal } from "@/components/MatchSimModal";
+import { SeasonProjectionPanel } from "@/components/SeasonProjectionPanel";
 import { onBudgetUpdated } from "@/lib/room-socket";
 import { getPublicSocketUrl } from "@/lib/public-env";
 
@@ -48,6 +50,8 @@ export function LeagueClient({ code }: { code: string }) {
   const [error, setError] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   const [report, setReport] = useState<MatchRow | null>(null);
+  const [simMatchId, setSimMatchId] = useState<string | null>(null);
+  const [showProjection, setShowProjection] = useState(false);
   const [homeScore, setHomeScore] = useState("0");
   const [awayScore, setAwayScore] = useState("0");
   const [busy, setBusy] = useState(false);
@@ -164,6 +168,28 @@ export function LeagueClient({ code }: { code: string }) {
         </div>
       )}
 
+      {showProjection && (
+        <SeasonProjectionPanel
+          code={code}
+          myUserId={data.user.id}
+          onClose={() => setShowProjection(false)}
+        />
+      )}
+
+      {simMatchId && (
+        <MatchSimModal
+          code={code}
+          matchId={simMatchId}
+          onClose={() => setSimMatchId(null)}
+          onApplied={() => {
+            setSimMatchId(null);
+            setToast("Sim result submitted — waiting for opponent");
+            setTimeout(() => setToast(null), 3500);
+            load().then(setData);
+          }}
+        />
+      )}
+
       {report && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
           <div className="fc-card w-full max-w-md p-6">
@@ -171,7 +197,9 @@ export function LeagueClient({ code }: { code: string }) {
             <p className="mt-2 text-sm text-fc-muted">
               {report.homeUser.teamName} vs {report.awayUser.teamName}
             </p>
-            <p className="text-xs text-fc-muted mt-1">Enter the real FC26 score. Opponent must confirm.</p>
+            <p className="text-xs text-fc-muted mt-1">
+              Enter a real FC26 score, or use Simulate instead. Opponent must confirm.
+            </p>
             <div className="mt-4 flex items-center gap-3">
               <label className="flex-1 text-sm">
                 <span className="text-fc-muted text-xs">{report.homeUser.teamName}</span>
@@ -223,12 +251,25 @@ export function LeagueClient({ code }: { code: string }) {
         )}
 
         <GlowCard glow="gold">
-          <h1 className="font-display text-2xl font-bold text-fc-gold">
-            League · Season {data.room.season}
-          </h1>
-          <p className="text-sm text-fc-muted mt-1">
-            Play in FC26, then report scores here. Opponent confirms.
-          </p>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h1 className="font-display text-2xl font-bold text-fc-gold">
+                League · Season {data.room.season}
+              </h1>
+              <p className="text-sm text-fc-muted mt-1">
+                Play in FC26 or run a statistical sim (both lock tactics). Opponent confirms.
+              </p>
+            </div>
+            {data.room.phase === "league" && (
+              <button
+                type="button"
+                className="fc-btn-secondary text-xs py-2 px-3"
+                onClick={() => setShowProjection(true)}
+              >
+                Project season
+              </button>
+            )}
+          </div>
         </GlowCard>
 
         <GlowCard>
@@ -298,17 +339,26 @@ export function LeagueClient({ code }: { code: string }) {
                   </div>
                   <div className="flex gap-2">
                     {m.canReport && (
-                      <button
-                        type="button"
-                        className="fc-btn-primary text-xs py-2 px-3"
-                        onClick={() => {
-                          setHomeScore("0");
-                          setAwayScore("0");
-                          setReport(m);
-                        }}
-                      >
-                        Report
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          className="fc-btn-primary text-xs py-2 px-3"
+                          onClick={() => setSimMatchId(m.id)}
+                        >
+                          Simulate
+                        </button>
+                        <button
+                          type="button"
+                          className="fc-btn-secondary text-xs py-2 px-3"
+                          onClick={() => {
+                            setHomeScore("0");
+                            setAwayScore("0");
+                            setReport(m);
+                          }}
+                        >
+                          Report
+                        </button>
+                      </>
                     )}
                     {m.canConfirm && (
                       <button
