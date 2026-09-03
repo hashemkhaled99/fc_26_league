@@ -49,7 +49,7 @@ export async function POST(request: Request) {
 
     const room = await prisma.room.findUnique({
       where: { code },
-      include: { settings: true, users: true },
+      include: { settings: true, heroDraftSettings: true, users: true },
     });
 
     if (!room) {
@@ -84,7 +84,13 @@ export async function POST(request: Request) {
         userId: existingUser.id,
         rejoined: true,
         phase: room.phase,
+        mode: room.mode,
       });
+    }
+
+    // Hero Draft: no new joins once draft has started
+    if (room.mode === "HERO_DRAFT" && room.phase !== "lobby") {
+      return apiError("This Hero Draft has already started — new joins are closed.");
     }
 
     if (room.phase !== "lobby" && room.phase !== "bidding") {
@@ -114,7 +120,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const budget = room.settings?.startingBudget ?? 400000000;
+    const budget =
+      room.mode === "HERO_DRAFT"
+        ? room.heroDraftSettings?.startingBudget ?? 500000000
+        : room.settings?.startingBudget ?? 400000000;
 
     const user = await prisma.user.create({
       data: {
@@ -135,6 +144,7 @@ export async function POST(request: Request) {
       userId: user.id,
       rejoined: false,
       phase: room.phase,
+      mode: room.mode,
     });
   } catch (err) {
     if (err instanceof z.ZodError) {

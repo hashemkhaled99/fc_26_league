@@ -7,6 +7,8 @@
     "build": "prisma generate && next build",
     "start": "tsx server.ts",
     "lint": "next lint",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "migrate:deploy": "prisma migrate deploy",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
@@ -18,12 +20,12 @@
     "ioredis": "^5.4.2",
     "iron-session": "^8.0.4",
     "next": "14.2.18",
+    "prisma": "^5.22.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "socket.io": "^4.8.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
-    "prisma": "^5.22.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
@@ -31,6 +33,7 @@
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "eslint": "^8.57.1",
-    "eslint-config-next": "14.2.18"
+    "eslint-config-next": "14.2.18",
+    "vitest": "^2.1.9"
   }
 }

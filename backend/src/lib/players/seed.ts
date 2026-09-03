@@ -108,7 +108,9 @@ export async function seedPlayersForRoom(
         marketValue: p.marketValue,
         status: "available",
         listingEndsAt,
+        tier: "GOLD",
         isIcon: false,
+        isHero: false,
       })),
     });
   }
@@ -170,7 +172,9 @@ export async function ensureFullCatalog(roomId: string): Promise<number> {
         marketValue: p.marketValue,
         status: "available",
         listingEndsAt,
+        tier: "GOLD",
         isIcon: false,
+        isHero: false,
       })),
     });
   }

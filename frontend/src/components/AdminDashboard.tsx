@@ -6,6 +6,7 @@ import Link from "next/link";
 import { RoomLayoutShell } from "@/components/RoomLayoutShell";
 import { GlowCard } from "@/components/GlowCard";
 import { StartBiddingButton } from "@/components/StartBiddingButton";
+import { HeroDraftAdminPanel } from "@/components/HeroDraftAdminPanel";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { CARD_TYPES } from "@/lib/cards/types";
 import { formatMoney } from "@/lib/utils";
@@ -45,7 +46,7 @@ interface Settings {
 }
 
 interface AdminData {
-  room: { code: string; name: string; phase: string; currentSeason: number };
+  room: { code: string; name: string; phase: string; currentSeason: number; mode?: string };
   settings: Settings | null;
   activeAuctions: number;
   users: AdminUser[];
@@ -284,6 +285,12 @@ export function AdminDashboard({ code }: { code: string }) {
           onCancel={() => setConfirm(null)}
           onConfirm={() => runAction(confirm.action, confirm.payload)}
         />
+      )}
+
+      {room.mode === "HERO_DRAFT" && (
+        <div className="mb-6">
+          <HeroDraftAdminPanel code={code} phase={room.phase} />
+        </div>
       )}
 
       {showLeaguePicker && leaguePickIds && (

@@ -42,6 +42,7 @@ export async function GET(
       id: room.id,
       code: room.code,
       name: room.name,
+      mode: room.mode,
       phase: room.phase,
       currentSeason: room.currentSeason,
       userCount: room.users.length,

@@ -8,6 +8,7 @@ import { apiError, apiSuccess } from "@/lib/api";
 
 async function assertTradingAllowed(roomId: string, phase: string) {
   const settings = await prisma.roomSettings.findUnique({ where: { roomId } });
+  if (phase === "trade_window") return true;
   if (isMarketLocked(settings)) return false;
   if (phase === "bidding") return true;
   if (phase === "league") {

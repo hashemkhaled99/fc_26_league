@@ -11,18 +11,21 @@ interface RoomNavProps {
 }
 
 const NAV_ITEMS = [
-  { href: "lobby", label: "Lobby", phases: ["lobby", "bidding", "league", "season_end"] },
+  { href: "lobby", label: "Lobby", phases: ["lobby", "bidding", "hero_draft", "trade_window", "draft_recap", "league", "season_end"] },
+  { href: "draft", label: "Draft", phases: ["hero_draft"] },
+  { href: "trade-window", label: "Trade Window", phases: ["trade_window"] },
+  { href: "draft-recap", label: "Recap", phases: ["draft_recap", "trade_window"] },
   { href: "market", label: "Market", phases: ["bidding"] },
   { href: "market/history", label: "Stats", phases: ["bidding", "league", "season_end"] },
-  { href: "squad", label: "Squad", phases: ["bidding", "league", "season_end"] },
-  { href: "trades", label: "Trades", phases: ["bidding", "league"] },
+  { href: "squad", label: "Squad", phases: ["bidding", "hero_draft", "trade_window", "draft_recap", "league", "season_end"] },
+  { href: "trades", label: "Trades", phases: ["bidding", "trade_window", "league"] },
   { href: "loans", label: "Loans", phases: ["bidding", "league"] },
   { href: "icon-boxes", label: "Icons", phases: ["bidding", "league"] },
   { href: "hero-boxes", label: "Heroes", phases: ["bidding", "league"] },
-  { href: "league", label: "League", phases: ["bidding", "league", "season_end"] },
+  { href: "league", label: "League", phases: ["bidding", "league", "season_end", "draft_recap"] },
   { href: "cards", label: "Cards", phases: ["bidding", "league"] },
   { href: "awards", label: "Awards", phases: ["league", "season_end"] },
-  { href: "admin", label: "Admin", phases: ["lobby", "bidding", "league", "season_end"], adminOnly: true },
+  { href: "admin", label: "Admin", phases: ["lobby", "bidding", "hero_draft", "trade_window", "draft_recap", "league", "season_end"], adminOnly: true },
 ];
 
 export function RoomNav({ code, phase, isAdmin }: RoomNavProps) {

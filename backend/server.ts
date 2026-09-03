@@ -252,6 +252,20 @@ async function main() {
   setInterval(runAuctionCloser, CHECK_INTERVAL_MS);
   setInterval(runTransferWindowWatcher, 5000);
 
+  async function runHeroDraftWatchers() {
+    try {
+      const {
+        processExpiredBidTurns,
+        processExpiredTradeWindows,
+      } = await import("./src/lib/hero-draft/engine");
+      await processExpiredBidTurns();
+      await processExpiredTradeWindows();
+    } catch (err) {
+      console.error("Hero draft watcher error:", err);
+    }
+  }
+  setInterval(runHeroDraftWatchers, 2000);
+
   httpServer.listen(PORT, () => {
     console.log(`FC26 backend (API + Socket.io) running on port ${PORT}`);
   });

@@ -8,13 +8,30 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum RoomMode {
+  FREE_MARKET
+  HERO_DRAFT
+}
+
+enum PlayerTier {
+  GOLD
+  HERO
+  ICON
+}
+
 model Room {
   id            String   @id @default(cuid())
   code          String   @unique
   name          String
+  /// FREE_MARKET (original auction) | HERO_DRAFT
+  mode          RoomMode @default(FREE_MARKET)
   phase         String   @default("lobby")
   currentSeason Int      @default(1)
   settings      RoomSettings?
+  heroDraftSettings HeroDraftSettings?
+  heroDraftState    HeroDraftState?
+  draftRoundHistory DraftRoundHistory[]
+  forcedPlayerReleases ForcedPlayerRelease[]
   users         User[]
   players       Player[]
   auctions      Auction[]
@@ -88,6 +105,8 @@ model Player {
   status        String   @default("available")
   /// When this listing window ends (available players only). Resets for another 12h if no auction starts.
   listingEndsAt DateTime?
+  /// Source of truth for rarity. isIcon/isHero kept in sync as legacy mirrors.
+  tier          PlayerTier @default(GOLD)
   isIcon        Boolean  @default(false)
   isHero        Boolean  @default(false)
   squadEntry    SquadPlayer?
@@ -96,6 +115,7 @@ model Player {
 
   @@index([roomId, status, isIcon, isHero])
   @@index([roomId, isIcon, isHero])
+  @@index([roomId, status, tier, position])
 }
 
 model SquadPlayer {
@@ -106,6 +126,10 @@ model SquadPlayer {
   playerId      String  @unique
   isStarting    Boolean @default(false)
   purchasePrice Int
+  /// Hero Draft slot index 0-17 (null for free-market squads)
+  draftSlotIndex Int?
+  /// How this player was acquired in Hero Draft
+  draftAcquisition String? // "auction" | "random_roll" | "downgrade" | "trade"
 }
 
 model Auction {
@@ -246,4 +270,97 @@ model MarketEffect {
   expiresAt    DateTime?
   payload      Json?
   createdAt    DateTime  @default(now())
+}
+
+/// Per-room Hero Draft configuration (created when mode = HERO_DRAFT)
+model HeroDraftSettings {
+  id                      String  @id @default(cuid())
+  room                    Room    @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId                  String  @unique
+  startingBudget          Int     @default(500000000)
+  bidTimerSeconds         Int     @default(60)
+  tierWeightGold          Int     @default(70)
+  tierWeightHero          Int     @default(25)
+  tierWeightIcon          Int     @default(5)
+  goldenRoundMinRating    Int     @default(80)
+  turnHolderMustOpenBid   Boolean @default(true)
+  bidTurnTimeoutSeconds   Int     @default(20)
+  /// Fraction of final winning price charged to pure passers
+  passiveDeductionRatio   Float   @default(0.5)
+  tradeWindowMinutes      Int     @default(30)
+  /// Admin can skip trade window after draft
+  tradeWindowEnabled      Boolean @default(true)
+}
+
+/// Live Hero Draft state machine for one room
+model HeroDraftState {
+  id                          String    @id @default(cuid())
+  room                        Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId                      String    @unique
+  /// not_started | in_progress | awaiting_releases | trade_window | completed
+  status                      String    @default("not_started")
+  currentRound                Int       @default(0)
+  goldenRoundIndex            Int?
+  turnQueue                   String[]
+  turnQueuePointer            Int       @default(0)
+  biddingOrder                String[]
+  slotTemplate                Json
+  filledSlotIndexes           Int[]     @default([])
+  tierWeights                 Json
+  goldenRoundMinRating        Int       @default(80)
+  tradeWindowEndsAt           DateTime?
+
+  /// Live sequential bidding for the CURRENT round
+  currentSlotIndex            Int?
+  currentAuctionedPlayerId    String?
+  currentTurnHolderId         String?
+  currentRoundActiveBidders   String[]  @default([])
+  currentRoundPassedBidders   String[]  @default([])
+  /// Map userId → last bid amount this round (JSON object)
+  currentRoundLastBids        Json?
+  currentRoundHighestBid      Int?
+  currentRoundHighestBidderId String?
+  currentRoundTurnUserId      String?
+  currentRoundTurnExpiresAt   DateTime?
+  /// Users who still owe a forced release before round can advance
+  pendingReleaseUserIds       String[]  @default([])
+  updatedAt                   DateTime  @updatedAt
+  createdAt                   DateTime  @default(now())
+}
+
+model ForcedPlayerRelease {
+  id                 String   @id @default(cuid())
+  room               Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId             String
+  userId             String
+  roundIndex         Int
+  releasedPlayerId   String
+  refundAmount       Int
+  downgradeSlotIndex Int
+  downgradePlayerId  String
+  createdAt          DateTime @default(now())
+
+  @@index([roomId, userId])
+}
+
+model DraftRoundHistory {
+  id                String   @id @default(cuid())
+  room              Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId            String
+  roundIndex        Int
+  slotIndex         Int
+  slotPosition      String
+  isGoldenRound     Boolean  @default(false)
+  auctionedPlayerId String
+  turnHolderId      String
+  winnerId          String
+  winningBid        Int
+  /// ordered array of { userId, passedAtBidAmount, lastBidAmount }
+  passOrder         Json
+  /// array of { userId, playerId, tier, rating, lastBidAmount, deductionAmount, deductionType }
+  randomRolls       Json
+  createdAt         DateTime @default(now())
+
+  @@unique([roomId, roundIndex])
+  @@index([roomId])
 }

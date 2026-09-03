@@ -9,6 +9,7 @@ import { RoomLayoutShell } from "@/components/RoomLayoutShell";
 import { GlowCard } from "@/components/GlowCard";
 import { formatMoney } from "@/lib/utils";
 import { StartBiddingButton } from "@/components/StartBiddingButton";
+import { StartHeroDraftButton } from "@/components/StartHeroDraftButton";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { onBudgetUpdated } from "@/lib/room-socket";
 import { getPublicSocketUrl } from "@/lib/public-env";
@@ -27,6 +28,7 @@ interface LobbyData {
     id: string;
     code: string;
     name: string;
+    mode?: "FREE_MARKET" | "HERO_DRAFT";
     phase: string;
     currentSeason: number;
     userCount: number;
@@ -179,7 +181,11 @@ export default function LobbyPage() {
 
           {currentUser?.isAdmin && room.phase === "lobby" && (
             <div className="mt-4">
-              <StartBiddingButton roomCode={room.code} />
+              {room.mode === "HERO_DRAFT" ? (
+                <StartHeroDraftButton roomCode={room.code} />
+              ) : (
+                <StartBiddingButton roomCode={room.code} />
+              )}
             </div>
           )}
 
@@ -187,6 +193,30 @@ export default function LobbyPage() {
             <div className="mt-4">
               <Link href={`/room/${room.code}/market`} className="fc-btn-primary block text-center">
                 Go to Live Market →
+              </Link>
+            </div>
+          )}
+
+          {room.phase === "hero_draft" && (
+            <div className="mt-4">
+              <Link href={`/room/${room.code}/draft`} className="fc-btn-primary block text-center">
+                Go to Hero Draft →
+              </Link>
+            </div>
+          )}
+
+          {room.phase === "trade_window" && (
+            <div className="mt-4">
+              <Link href={`/room/${room.code}/trade-window`} className="fc-btn-primary block text-center">
+                Trade Window →
+              </Link>
+            </div>
+          )}
+
+          {room.phase === "draft_recap" && (
+            <div className="mt-4">
+              <Link href={`/room/${room.code}/draft-recap`} className="fc-btn-primary block text-center">
+                Draft Recap →
               </Link>
             </div>
           )}

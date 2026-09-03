@@ -52,15 +52,21 @@ export async function GET(
         }
       : null;
 
+    const heroDraftSettings = await prisma.heroDraftSettings.findUnique({
+      where: { roomId: room.id },
+    });
+
     return apiSuccess({
       room: {
         id: room.id,
         code: room.code,
         name: room.name,
+        mode: room.mode,
         phase: room.phase,
         currentSeason: room.currentSeason,
       },
       settings,
+      heroDraftSettings,
       activeAuctions,
       iconProgress,
       heroProgress,

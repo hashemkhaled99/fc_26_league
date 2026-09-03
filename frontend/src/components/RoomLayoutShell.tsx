@@ -16,6 +16,9 @@ interface RoomLayoutShellProps {
 const PHASE_LABELS: Record<string, string> = {
   lobby: "Lobby",
   bidding: "Transfer Market",
+  hero_draft: "Hero Draft",
+  trade_window: "Trade Window",
+  draft_recap: "Draft Recap",
   league: "League",
   season_end: "Season End",
 };

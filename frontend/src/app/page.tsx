@@ -12,6 +12,9 @@ type RejoinBy = "displayName" | "teamName";
 
 function roomEntryPath(code: string, phase?: string) {
   if (phase === "bidding") return `/room/${code}/market`;
+  if (phase === "hero_draft") return `/room/${code}/draft`;
+  if (phase === "trade_window") return `/room/${code}/trade-window`;
+  if (phase === "draft_recap") return `/room/${code}/draft-recap`;
   if (phase === "league" || phase === "season_end") return `/room/${code}/league`;
   return `/room/${code}/lobby`;
 }
@@ -30,6 +33,7 @@ export default function HomePage() {
   const [error, setError] = useState("");
 
   const [roomName, setRoomName] = useState("");
+  const [leagueMode, setLeagueMode] = useState<"FREE_MARKET" | "HERO_DRAFT">("FREE_MARKET");
   const [code, setCode] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [teamName, setTeamName] = useState("");
@@ -52,6 +56,7 @@ export default function HomePage() {
           displayName,
           teamName,
           pin: pin || undefined,
+          mode: leagueMode,
         }),
       });
       const data = await readApiJson<{ code?: string; phase?: string; error?: string }>(res);
@@ -190,6 +195,35 @@ export default function HomePage() {
                     onChange={(e) => setRoomName(e.target.value)}
                     required
                   />
+                  <div className="space-y-2">
+                    <p className="text-xs uppercase tracking-wide text-fc-muted">League mode</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setLeagueMode("FREE_MARKET")}
+                        className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
+                          leagueMode === "FREE_MARKET"
+                            ? "border-fc-gold bg-fc-gold/10 text-fc-gold"
+                            : "border-white/10 text-fc-muted hover:border-white/20"
+                        }`}
+                      >
+                        <span className="block font-semibold">Free Market</span>
+                        <span className="text-xs opacity-80">Open auctions</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setLeagueMode("HERO_DRAFT")}
+                        className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
+                          leagueMode === "HERO_DRAFT"
+                            ? "border-fc-gold bg-fc-gold/10 text-fc-gold"
+                            : "border-white/10 text-fc-muted hover:border-white/20"
+                        }`}
+                      >
+                        <span className="block font-semibold">Hero Draft</span>
+                        <span className="text-xs opacity-80">18-round draft</span>
+                      </button>
+                    </div>
+                  </div>
                   <input
                     className="fc-input"
                     placeholder="Your display name"
