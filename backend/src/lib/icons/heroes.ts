@@ -1,47 +1,44 @@
-/** Hero-tier pool — FUT-style moment cards, separate from Icons. */
-export const HERO_CATALOG: Array<{
+import fs from "fs";
+import path from "path";
+
+export type HeroCatalogEntry = {
   name: string;
   realTeam: string;
   position: string;
   baseRating: number;
-}> = [
-  { name: "Hero — Ballack 06", realTeam: "Heroes", position: "CM", baseRating: 89 },
-  { name: "Hero — Larsson 01", realTeam: "Heroes", position: "ST", baseRating: 88 },
-  { name: "Hero — Joe Cole 06", realTeam: "Heroes", position: "CAM", baseRating: 87 },
-  { name: "Hero — Abedi Pelé", realTeam: "Heroes", position: "LW", baseRating: 88 },
-  { name: "Hero — Ginola 96", realTeam: "Heroes", position: "LW", baseRating: 87 },
-  { name: "Hero — Capdevila 10", realTeam: "Heroes", position: "LB", baseRating: 86 },
-  { name: "Hero — Lucio 06", realTeam: "Heroes", position: "CB", baseRating: 88 },
-  { name: "Hero — Carvalho 08", realTeam: "Heroes", position: "CB", baseRating: 87 },
-  { name: "Hero — Marchisio 12", realTeam: "Heroes", position: "CM", baseRating: 87 },
-  { name: "Hero — Park Ji-sung", realTeam: "Heroes", position: "RM", baseRating: 86 },
-  { name: "Hero — Yaya Touré 12", realTeam: "Heroes", position: "CDM", baseRating: 89 },
-  { name: "Hero — David Villa 10", realTeam: "Heroes", position: "ST", baseRating: 89 },
-  { name: "Hero — Forlán 09", realTeam: "Heroes", position: "ST", baseRating: 88 },
-  { name: "Hero — Sneijder 10", realTeam: "Heroes", position: "CAM", baseRating: 88 },
-  { name: "Hero — Robben 13", realTeam: "Heroes", position: "RW", baseRating: 89 },
-  { name: "Hero — Ribéry 13", realTeam: "Heroes", position: "LW", baseRating: 89 },
-  { name: "Hero — Milito 10", realTeam: "Heroes", position: "ST", baseRating: 88 },
-  { name: "Hero — Di María 14", realTeam: "Heroes", position: "RW", baseRating: 88 },
-  { name: "Hero — Kompany 12", realTeam: "Heroes", position: "CB", baseRating: 88 },
-  { name: "Hero — Papin 91", realTeam: "Heroes", position: "ST", baseRating: 87 },
-  { name: "Hero — Okocha 98", realTeam: "Heroes", position: "CAM", baseRating: 87 },
-  { name: "Hero — Nakata 02", realTeam: "Heroes", position: "CAM", baseRating: 86 },
-  { name: "Hero — Bergkamp 97", realTeam: "Heroes", position: "CF", baseRating: 89 },
-  { name: "Hero — Pires 02", realTeam: "Heroes", position: "LM", baseRating: 87 },
-  { name: "Hero — Torres 08", realTeam: "Heroes", position: "ST", baseRating: 88 },
-  { name: "Hero — Shevchenko 04", realTeam: "Heroes", position: "ST", baseRating: 88 },
-  { name: "Hero — Nedvěd 03", realTeam: "Heroes", position: "LM", baseRating: 88 },
-  { name: "Hero — Rui Costa 01", realTeam: "Heroes", position: "CAM", baseRating: 87 },
-  { name: "Hero — Al-Owairan 94", realTeam: "Heroes", position: "ST", baseRating: 86 },
-  { name: "Hero — Campo 02", realTeam: "Heroes", position: "CB", baseRating: 85 },
-  { name: "Hero — Keane 00", realTeam: "Heroes", position: "CDM", baseRating: 88 },
-  { name: "Hero — Scholes 08", realTeam: "Heroes", position: "CM", baseRating: 88 },
-  { name: "Hero — Giggs 99", realTeam: "Heroes", position: "LM", baseRating: 88 },
-  { name: "Hero — Raúl 00", realTeam: "Heroes", position: "ST", baseRating: 88 },
-  { name: "Hero — Hierro 98", realTeam: "Heroes", position: "CB", baseRating: 87 },
-  { name: "Hero — Zambrotta 06", realTeam: "Heroes", position: "RB", baseRating: 87 },
-  { name: "Hero — Totti 01", realTeam: "Heroes", position: "CF", baseRating: 89 },
-  { name: "Hero — Morientes 02", realTeam: "Heroes", position: "ST", baseRating: 86 },
-  { name: "Hero — Govou 06", realTeam: "Heroes", position: "RW", baseRating: 85 },
-];
+  nation?: string;
+};
+
+type HeroFile = {
+  players: HeroCatalogEntry[];
+};
+
+let cached: HeroCatalogEntry[] | null = null;
+
+/**
+ * Real EA FC 26 Ultimate Team Heroes (base cards).
+ * Loaded from data/fc26-hero-players.json — same pattern as gold players.
+ */
+export function getHeroCatalog(): HeroCatalogEntry[] {
+  if (cached) return cached;
+
+  const filePath = path.join(process.cwd(), "data", "fc26-hero-players.json");
+  if (!fs.existsSync(filePath)) {
+    console.warn("[heroes] data/fc26-hero-players.json missing — using empty catalog");
+    cached = [];
+    return cached;
+  }
+
+  const file = JSON.parse(fs.readFileSync(filePath, "utf8")) as HeroFile;
+  cached = (file.players ?? []).map((p) => ({
+    name: p.name,
+    realTeam: p.realTeam || "Heroes",
+    position: p.position === "CF" ? "ST" : p.position,
+    baseRating: p.baseRating,
+    nation: p.nation,
+  }));
+  return cached;
+}
+
+/** Real FC 26 Heroes roster (lazy-loaded from JSON). */
+export const HERO_CATALOG: HeroCatalogEntry[] = getHeroCatalog();

@@ -189,6 +189,7 @@ const settingsSchema = z.object({
   tierWeightHero: z.number().int().min(0).max(100).optional(),
   tierWeightIcon: z.number().int().min(0).max(100).optional(),
   goldenRoundMinRating: z.number().int().min(1).max(99).optional(),
+  minPlayerRating: z.number().int().min(1).max(99).optional(),
   turnHolderMustOpenBid: z.boolean().optional(),
   bidTurnTimeoutSeconds: z.number().int().positive().optional(),
   passiveDeductionRatio: z.number().min(0).max(1).optional(),
@@ -233,6 +234,7 @@ export async function PATCH(request: Request, { params }: Ctx) {
       where: { roomId: admin.room.id, status: "not_started" },
       data: {
         tierWeights: nextWeights,
+        minPlayerRating: updated.minPlayerRating,
         goldenRoundMinRating: updated.goldenRoundMinRating,
       },
     });

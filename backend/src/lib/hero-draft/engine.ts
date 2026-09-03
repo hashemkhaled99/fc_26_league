@@ -22,7 +22,7 @@ import {
   pickGoldenRoundIndex,
 } from "./turn-order";
 import { initBidRound, placeBid, passBid, type BidRoundState } from "./bidding-machine";
-import { pickPlayerForSlot } from "./player-pick";
+import { pickPlayerForSlot, effectiveDraftMinRating } from "./player-pick";
 import { computeRandomRollDeduction } from "./deductions";
 
 function normalizePos(pos: string) {
@@ -193,6 +193,7 @@ export async function startHeroDraft(roomCode: string) {
         slotTemplate: DEFAULT_SLOT_TEMPLATE,
         filledSlotIndexes: [],
         tierWeights: weights,
+        minPlayerRating: room.heroDraftSettings?.minPlayerRating ?? 75,
         goldenRoundMinRating:
           room.heroDraftSettings?.goldenRoundMinRating ?? 80,
       },
@@ -226,6 +227,11 @@ export async function beginRound(roomCode: string) {
   const slot = template[slotIndex];
   const weights = (state.tierWeights as TierWeights) ?? DEFAULT_TIER_WEIGHTS;
   const isGolden = state.goldenRoundIndex === state.currentRound;
+  const minRating = effectiveDraftMinRating(
+    state.minPlayerRating ?? 75,
+    state.goldenRoundMinRating,
+    isGolden
+  );
 
   const available = await prisma.player.findMany({
     where: { roomId: room.id, status: "available" },
@@ -247,7 +253,7 @@ export async function beginRound(roomCode: string) {
     })),
     slot,
     weights,
-    minRating: isGolden ? state.goldenRoundMinRating : undefined,
+    minRating,
   });
   if (!auctioned) {
     throw new Error(`No available players for slot ${slot.label}`);
@@ -327,20 +333,7 @@ export async function heroDraftPlaceBid(
   const user = room.users.find((u) => u.id === userId);
   if (!user) throw new Error("User not in room");
   if (amount > user.budget) throw new Error("Insufficient budget");
-
-  // Opening bid minimum = market value when turn holder must open
-  if (
-    !state.currentRoundHighestBid &&
-    state.currentTurnHolderId === userId &&
-    settings?.turnHolderMustOpenBid
-  ) {
-    const player = await prisma.player.findUnique({
-      where: { id: state.currentAuctionedPlayerId! },
-    });
-    if (player && amount < player.marketValue) {
-      throw new Error(`Opening bid must be at least ${player.marketValue}`);
-    }
-  }
+  // Opening bid: turn holder (or whoever opens) chooses any amount — no market-value floor
 
   const current = stateToBidRound(state);
   const result = placeBid(current, userId, amount);
@@ -536,7 +529,11 @@ async function resolveRoundAuction(
         .map((p) => ({ ...p, tier: p.tier as PlayerTier })),
       slot,
       weights,
-      minRating: isGolden ? state.goldenRoundMinRating : undefined,
+      minRating: effectiveDraftMinRating(
+        state.minPlayerRating ?? 75,
+        state.goldenRoundMinRating,
+        isGolden
+      ),
       excludeIds: usedIds,
     });
 

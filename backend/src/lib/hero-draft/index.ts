@@ -43,6 +43,6 @@ export {
   type BidActionResult,
 } from "./bidding-machine";
 
-export { pickPlayerForSlot, type PickablePlayer } from "./player-pick";
+export { pickPlayerForSlot, effectiveDraftMinRating, type PickablePlayer } from "./player-pick";
 
 export { HERO_DRAFT_EVENTS, getTierVisual, type HeroDraftEvent, type TierVisual } from "./events";

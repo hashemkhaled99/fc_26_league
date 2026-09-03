@@ -4,7 +4,7 @@ import {
   placeBid,
   passBid,
 } from "@/lib/hero-draft/bidding-machine";
-import { pickPlayerForSlot } from "@/lib/hero-draft/player-pick";
+import { pickPlayerForSlot, effectiveDraftMinRating } from "@/lib/hero-draft/player-pick";
 import type { PickablePlayer } from "@/lib/hero-draft/player-pick";
 import { DEFAULT_SLOT_TEMPLATE } from "@/lib/hero-draft/slots";
 import { DEFAULT_TIER_WEIGHTS } from "@/lib/hero-draft/tiers";
@@ -29,6 +29,14 @@ describe("Sequential bidding machine", () => {
     expect(r.state.turnUserId).toBe("c");
     expect(r.state.highestBid).toBe(10);
     expect(r.state.openingComplete).toBe(true);
+  });
+
+  it("allows any positive opening amount (no forced floor)", () => {
+    const s = initBidRound({ biddingOrder: order, turnHolderId: "a" });
+    const r = placeBid(s, "a", 1);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.state.highestBid).toBe(1);
   });
 
   it("rejects bid from wrong user", () => {
@@ -172,6 +180,21 @@ describe("Player pick for slot", () => {
     });
     expect(p?.baseRating).toBeGreaterThanOrEqual(80);
     expect(p?.id).toBe("g2");
+  });
+
+  it("admin minPlayerRating applies as draft pool floor", () => {
+    expect(effectiveDraftMinRating(75, 80, false)).toBe(75);
+    expect(effectiveDraftMinRating(75, 80, true)).toBe(80);
+    expect(effectiveDraftMinRating(85, 80, true)).toBe(85);
+
+    const p = pickPlayerForSlot({
+      pool,
+      slot: cbSlot,
+      weights: { GOLD: 100, HERO: 0, ICON: 0 },
+      minRating: effectiveDraftMinRating(82, 80, false),
+      rng: () => 0,
+    });
+    expect(p?.baseRating).toBeGreaterThanOrEqual(82);
   });
 
   it("excludes used ids", () => {

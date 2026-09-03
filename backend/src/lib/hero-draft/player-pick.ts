@@ -11,6 +11,16 @@ export type PickablePlayer = {
   status: string;
 };
 
+/** Admin draft min OVR; Golden Round uses the higher of the two floors. */
+export function effectiveDraftMinRating(
+  minPlayerRating: number,
+  goldenRoundMinRating: number,
+  isGolden: boolean
+): number {
+  if (isGolden) return Math.max(minPlayerRating, goldenRoundMinRating);
+  return minPlayerRating;
+}
+
 /**
  * Pick a random available player matching slot positions + tier weights.
  * Falls back: try preferred tier → other tiers at same positions → any remaining at positions.
@@ -19,7 +29,7 @@ export function pickPlayerForSlot(opts: {
   pool: PickablePlayer[];
   slot: DraftSlotDef;
   weights: TierWeights;
-  /** Force a minimum rating (Golden Round) */
+  /** Force a minimum rating (admin pool floor / Golden Round) */
   minRating?: number;
   /** Force Gold only (downgrade replacement) */
   forceTier?: PlayerTier;

@@ -104,8 +104,9 @@ export function HeroDraftClient() {
     setData(payload);
     if (payload.state?.currentRoundHighestBid) {
       setBidAmount(String(payload.state.currentRoundHighestBid + 1_000_000));
-    } else if (payload.auctionedPlayer) {
-      setBidAmount(String(payload.auctionedPlayer.marketValue));
+    } else {
+      // Opening bid: leave blank so the turn holder chooses freely (not forced to market value)
+      setBidAmount("");
     }
     return payload;
   }, [code, router]);
@@ -302,21 +303,30 @@ export function HeroDraftClient() {
 
           {isMyTurn && (
             <div className="rounded-xl border border-fc-gold/30 bg-fc-gold/5 p-4 space-y-3">
-              <label className="block text-sm text-fc-muted">Your bid</label>
+              <label className="block text-sm text-fc-muted">
+                {state.currentRoundHighestBid == null
+                  ? "Your opening bid (any amount you choose)"
+                  : "Your bid (must beat current highest)"}
+              </label>
               <input
                 className="fc-input font-mono"
                 type="number"
                 value={bidAmount}
                 onChange={(e) => setBidAmount(e.target.value)}
                 min={1}
+                placeholder={
+                  state.currentRoundHighestBid == null
+                    ? "Enter opening amount…"
+                    : undefined
+                }
               />
               <div className="flex gap-3">
                 <button
                   className="fc-btn-primary flex-1"
-                  disabled={acting}
+                  disabled={acting || !bidAmount || Number(bidAmount) <= 0}
                   onClick={() => act({ action: "bid", amount: Number(bidAmount) })}
                 >
-                  Raise
+                  {state.currentRoundHighestBid == null ? "Open bid" : "Raise"}
                 </button>
                 <button
                   className="fc-btn-secondary flex-1"

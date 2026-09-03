@@ -282,6 +282,8 @@ model HeroDraftSettings {
   tierWeightGold          Int     @default(70)
   tierWeightHero          Int     @default(25)
   tierWeightIcon          Int     @default(5)
+  /// Minimum OVR for players that can appear in draft auctions / random rolls
+  minPlayerRating         Int     @default(75)
   goldenRoundMinRating    Int     @default(80)
   turnHolderMustOpenBid   Boolean @default(true)
   bidTurnTimeoutSeconds   Int     @default(20)
@@ -307,6 +309,8 @@ model HeroDraftState {
   slotTemplate                Json
   filledSlotIndexes           Int[]     @default([])
   tierWeights                 Json
+  /// Snapshot of admin min OVR for this draft
+  minPlayerRating             Int       @default(75)
   goldenRoundMinRating        Int       @default(80)
   tradeWindowEndsAt           DateTime?
 

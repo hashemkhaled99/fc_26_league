@@ -1,0 +1,5 @@
+-- AlterTable
+ALTER TABLE "HeroDraftSettings" ADD COLUMN IF NOT EXISTS "minPlayerRating" INTEGER NOT NULL DEFAULT 75;
+
+-- AlterTable
+ALTER TABLE "HeroDraftState" ADD COLUMN IF NOT EXISTS "minPlayerRating" INTEGER NOT NULL DEFAULT 75;

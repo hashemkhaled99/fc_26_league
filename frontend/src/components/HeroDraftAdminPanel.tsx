@@ -11,6 +11,7 @@ type HeroSettings = {
   tierWeightGold: number;
   tierWeightHero: number;
   tierWeightIcon: number;
+  minPlayerRating: number;
   goldenRoundMinRating: number;
   turnHolderMustOpenBid: boolean;
   passiveDeductionRatio: number;
@@ -162,6 +163,19 @@ export function HeroDraftAdminPanel({
             />
           </label>
           <label className="text-sm space-y-1">
+            <span className="text-fc-muted">Min player rating (draft pool)</span>
+            <input
+              className="fc-input"
+              type="number"
+              min={1}
+              max={99}
+              value={settings.minPlayerRating ?? 75}
+              onChange={(e) =>
+                setSettings({ ...settings, minPlayerRating: Number(e.target.value) })
+              }
+            />
+          </label>
+          <label className="text-sm space-y-1">
             <span className="text-fc-muted">Golden round min rating</span>
             <input
               className="fc-input"
@@ -210,7 +224,7 @@ export function HeroDraftAdminPanel({
                 setSettings({ ...settings, turnHolderMustOpenBid: e.target.checked })
               }
             />
-            Turn holder must open bid
+            Turn holder must open (can still pick any amount)
           </label>
           <label className="flex items-center gap-2">
             <input
