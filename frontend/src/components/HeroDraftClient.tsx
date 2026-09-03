@@ -103,9 +103,10 @@ export function HeroDraftClient() {
     if (!res.ok) throw new Error(payload.error ?? "Failed to load draft");
     setData(payload);
     if (payload.state?.currentRoundHighestBid) {
-      setBidAmount(String(payload.state.currentRoundHighestBid + 1_000_000));
+      // Input is in millions — suggest 1M above current highest
+      setBidAmount(String(payload.state.currentRoundHighestBid / 1_000_000 + 1));
     } else {
-      // Opening bid: leave blank so the turn holder chooses freely (not forced to market value)
+      // Opening bid: leave blank so the turn holder chooses freely
       setBidAmount("");
     }
     return payload;
@@ -305,26 +306,43 @@ export function HeroDraftClient() {
             <div className="rounded-xl border border-fc-gold/30 bg-fc-gold/5 p-4 space-y-3">
               <label className="block text-sm text-fc-muted">
                 {state.currentRoundHighestBid == null
-                  ? "Your opening bid (any amount you choose)"
-                  : "Your bid (must beat current highest)"}
+                  ? "Opening bid (in millions — e.g. 5 = 5M)"
+                  : "Your bid in millions (must beat current highest)"}
               </label>
-              <input
-                className="fc-input font-mono"
-                type="number"
-                value={bidAmount}
-                onChange={(e) => setBidAmount(e.target.value)}
-                min={1}
-                placeholder={
-                  state.currentRoundHighestBid == null
-                    ? "Enter opening amount…"
-                    : undefined
-                }
-              />
+              <div className="relative">
+                <input
+                  className="fc-input font-mono pr-10"
+                  type="number"
+                  inputMode="decimal"
+                  step="0.5"
+                  value={bidAmount}
+                  onChange={(e) => setBidAmount(e.target.value)}
+                  min={0.5}
+                  placeholder={
+                    state.currentRoundHighestBid == null
+                      ? "e.g. 5"
+                      : undefined
+                  }
+                />
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 font-mono font-bold text-fc-gold">
+                  M
+                </span>
+              </div>
+              {bidAmount && Number(bidAmount) > 0 && (
+                <p className="text-xs text-fc-muted">
+                  You will bid {formatMoney(Math.round(Number(bidAmount) * 1_000_000))}
+                </p>
+              )}
               <div className="flex gap-3">
                 <button
                   className="fc-btn-primary flex-1"
                   disabled={acting || !bidAmount || Number(bidAmount) <= 0}
-                  onClick={() => act({ action: "bid", amount: Number(bidAmount) })}
+                  onClick={() =>
+                    act({
+                      action: "bid",
+                      amount: Math.round(Number(bidAmount) * 1_000_000),
+                    })
+                  }
                 >
                   {state.currentRoundHighestBid == null ? "Open bid" : "Raise"}
                 </button>

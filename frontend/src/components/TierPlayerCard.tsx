@@ -2,7 +2,6 @@
 
 import { motion } from "framer-motion";
 import { getTierVisual } from "@/lib/hero-draft-ui";
-import { formatMoney } from "@/lib/utils";
 
 export type DraftPlayer = {
   id: string;
@@ -10,7 +9,7 @@ export type DraftPlayer = {
   realTeam: string;
   position: string;
   baseRating: number;
-  marketValue: number;
+  marketValue?: number;
   tier?: string;
 };
 
@@ -52,7 +51,6 @@ export function TierPlayerCard({
           <p className="text-xs font-bold text-white/70">{player.position}</p>
         </div>
       </div>
-      <p className="mt-3 font-mono text-sm text-fc-green">{formatMoney(player.marketValue)}</p>
     </motion.div>
   );
 }
