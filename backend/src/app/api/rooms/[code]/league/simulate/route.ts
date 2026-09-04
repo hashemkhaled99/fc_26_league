@@ -18,6 +18,16 @@ import { projectSeason } from "@/lib/league/simulate-season";
 const mentalitySchema = z.enum(["attack", "balanced", "defence"]);
 const formationSchema = z.string().min(1).max(32);
 
+/** JSON from DB often has null for optional HT fields — treat null as omitted. */
+const nullishMentality = z
+  .union([mentalitySchema, z.null()])
+  .optional()
+  .transform((v) => v ?? undefined);
+const nullishFormation = z
+  .union([formationSchema, z.null()])
+  .optional()
+  .transform((v) => v ?? undefined);
+
 const tacticsSchema = z.object({
   formationId: formationSchema.default("433"),
   mentality: mentalitySchema.default("balanced"),
@@ -32,8 +42,8 @@ const tacticsSchema = z.object({
     )
     .max(5)
     .optional(),
-  halfTimeMentality: mentalitySchema.optional(),
-  halfTimeFormationId: formationSchema.optional(),
+  halfTimeMentality: nullishMentality,
+  halfTimeFormationId: nullishFormation,
 });
 
 const bodySchema = z.discriminatedUnion("action", [
@@ -87,14 +97,16 @@ function parseTactics(raw: unknown, fallbackStarterIds: string[]): TeamTactics |
 }
 
 function toJsonTactics(t: TeamTactics): Prisma.InputJsonValue {
-  return {
+  const json: Record<string, unknown> = {
     formationId: t.formationId,
     mentality: t.mentality,
     starterIds: t.starterIds,
     substitutions: t.substitutions ?? [],
-    halfTimeMentality: t.halfTimeMentality ?? null,
-    halfTimeFormationId: t.halfTimeFormationId ?? null,
   };
+  // Omit unset HT fields — null breaks re-parse with strict optional schemas
+  if (t.halfTimeMentality) json.halfTimeMentality = t.halfTimeMentality;
+  if (t.halfTimeFormationId) json.halfTimeFormationId = t.halfTimeFormationId;
+  return json as Prisma.InputJsonValue;
 }
 
 function mergeDefaults(
@@ -376,9 +388,12 @@ export async function POST(
       });
     }
 
-    // preview / odds / apply require both locks
-    if (!bothLocked || !homeLockedTactics || !awayLockedTactics) {
+    // preview / odds / apply require both locks + valid stored tactics
+    if (!bothLocked) {
       return apiError("Both managers must lock tactics first");
+    }
+    if (!homeLockedTactics || !awayLockedTactics) {
+      return apiError("Locked tactics are invalid — unlock and lock again");
     }
     if ((body.action === "preview" || body.action === "apply") && !isParty) {
       return apiError("Not your match");

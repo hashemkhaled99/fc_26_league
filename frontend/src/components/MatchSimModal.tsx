@@ -427,6 +427,9 @@ export function MatchSimModal({
         awayLocked: json.awayLocked,
         bothLocked: json.bothLocked,
       });
+      setError("");
+      setResult(null);
+      setOdds(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error");
     } finally {
