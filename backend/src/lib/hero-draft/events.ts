@@ -30,7 +30,7 @@ export function getTierVisual(tier: string): TierVisual {
   switch (tier) {
     case "ICON":
       return {
-        label: "Icon",
+        label: "All-time",
         border: "border-violet-400/60",
         glow: "shadow-[0_0_28px_rgba(167,139,250,0.45)]",
         badge: "bg-violet-500/30 text-violet-200",

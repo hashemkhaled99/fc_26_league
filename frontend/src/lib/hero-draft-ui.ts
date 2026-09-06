@@ -10,7 +10,7 @@ export function getTierVisual(tier: string): TierVisual {
   switch (tier) {
     case "ICON":
       return {
-        label: "Icon",
+        label: "All-time",
         border: "border-violet-400/60",
         glow: "shadow-[0_0_28px_rgba(167,139,250,0.45)]",
         badge: "bg-violet-500/30 text-violet-200",
@@ -34,3 +34,17 @@ export function getTierVisual(tier: string): TierVisual {
       };
   }
 }
+
+/** Split "Lionel Messi 2009" into name + year for all-time cards. */
+export function parseAllTimePlayer(name: string, realTeam?: string) {
+  const match = name.trim().match(/^(.*?)\s+(19\d{2}|20\d{2})$/);
+  if (!match) {
+    return { displayName: name, year: null as number | null, club: realTeam ?? "" };
+  }
+  return {
+    displayName: match[1],
+    year: Number(match[2]),
+    club: realTeam ?? "",
+  };
+}
+

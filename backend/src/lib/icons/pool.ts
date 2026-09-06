@@ -1,76 +1,83 @@
-/** Curated Icon-tier pool — seeded per room when generating boxes (not on the transfer market). */
-export const ICON_CATALOG: Array<{
+import fs from "fs";
+import path from "path";
+
+export type IconCatalogEntry = {
   name: string;
   realTeam: string;
   position: string;
   baseRating: number;
-}> = [
-  { name: "Pelé", realTeam: "Icons", position: "ST", baseRating: 95 },
-  { name: "Diego Maradona", realTeam: "Icons", position: "CAM", baseRating: 95 },
-  { name: "Zinedine Zidane", realTeam: "Icons", position: "CAM", baseRating: 94 },
-  { name: "Ronaldo Nazário", realTeam: "Icons", position: "ST", baseRating: 94 },
-  { name: "Johan Cruyff", realTeam: "Icons", position: "CF", baseRating: 93 },
-  { name: "Franz Beckenbauer", realTeam: "Icons", position: "CB", baseRating: 93 },
-  { name: "Paolo Maldini", realTeam: "Icons", position: "CB", baseRating: 92 },
-  { name: "Ronaldinho", realTeam: "Icons", position: "LW", baseRating: 92 },
-  { name: "Thierry Henry", realTeam: "Icons", position: "ST", baseRating: 91 },
-  { name: "Andrea Pirlo", realTeam: "Icons", position: "CM", baseRating: 91 },
-  { name: "Franco Baresi", realTeam: "Icons", position: "CB", baseRating: 91 },
-  { name: "Ruud Gullit", realTeam: "Icons", position: "CAM", baseRating: 90 },
-  { name: "Marco van Basten", realTeam: "Icons", position: "ST", baseRating: 91 },
-  { name: "George Best", realTeam: "Icons", position: "RW", baseRating: 90 },
-  { name: "Lev Yashin", realTeam: "Icons", position: "GK", baseRating: 92 },
-  { name: "Garrincha", realTeam: "Icons", position: "RW", baseRating: 90 },
-  { name: "Ferenc Puskás", realTeam: "Icons", position: "ST", baseRating: 91 },
-  { name: "Eusébio", realTeam: "Icons", position: "ST", baseRating: 90 },
-  { name: "Lothar Matthäus", realTeam: "Icons", position: "CDM", baseRating: 90 },
-  { name: "Roberto Carlos", realTeam: "Icons", position: "LB", baseRating: 89 },
-  { name: "Cafu", realTeam: "Icons", position: "RB", baseRating: 89 },
-  { name: "Fabio Cannavaro", realTeam: "Icons", position: "CB", baseRating: 89 },
-  { name: "Rivaldo", realTeam: "Icons", position: "CAM", baseRating: 89 },
-  { name: "Kaká", realTeam: "Icons", position: "CAM", baseRating: 89 },
-  { name: "Andrés Iniesta", realTeam: "Icons", position: "CM", baseRating: 90 },
-  { name: "Xavi Hernández", realTeam: "Icons", position: "CM", baseRating: 90 },
-  { name: "Steven Gerrard", realTeam: "Icons", position: "CM", baseRating: 88 },
-  { name: "Frank Lampard", realTeam: "Icons", position: "CM", baseRating: 88 },
-  { name: "Wayne Rooney", realTeam: "Icons", position: "ST", baseRating: 88 },
-  { name: "Didier Drogba", realTeam: "Icons", position: "ST", baseRating: 88 },
-  { name: "Samuel Eto'o", realTeam: "Icons", position: "ST", baseRating: 88 },
-  { name: "Luis Figo", realTeam: "Icons", position: "RW", baseRating: 88 },
-  { name: "Gareth Bale", realTeam: "Icons", position: "RW", baseRating: 87 },
-  { name: "Iker Casillas", realTeam: "Icons", position: "GK", baseRating: 89 },
-  { name: "Gianluigi Buffon", realTeam: "Icons", position: "GK", baseRating: 89 },
-  { name: "Petr Čech", realTeam: "Icons", position: "GK", baseRating: 87 },
-  { name: "Carles Puyol", realTeam: "Icons", position: "CB", baseRating: 88 },
-  { name: "Nemanja Vidić", realTeam: "Icons", position: "CB", baseRating: 87 },
-  { name: "Rio Ferdinand", realTeam: "Icons", position: "CB", baseRating: 87 },
-  { name: "Ashley Cole", realTeam: "Icons", position: "LB", baseRating: 86 },
-  { name: "Philipp Lahm", realTeam: "Icons", position: "RB", baseRating: 88 },
-  { name: "David Beckham", realTeam: "Icons", position: "RM", baseRating: 88 },
-  { name: "Claude Makélélé", realTeam: "Icons", position: "CDM", baseRating: 87 },
-  { name: "Patrick Vieira", realTeam: "Icons", position: "CDM", baseRating: 88 },
-  { name: "Michael Ballack", realTeam: "Icons", position: "CM", baseRating: 87 },
-  { name: "Alessandro Del Piero", realTeam: "Icons", position: "CF", baseRating: 89 },
-  { name: "Francesco Totti", realTeam: "Icons", position: "CAM", baseRating: 88 },
-  { name: "Raúl González", realTeam: "Icons", position: "ST", baseRating: 87 },
-  { name: "Fernando Torres", realTeam: "Icons", position: "ST", baseRating: 86 },
-  { name: "Robin van Persie", realTeam: "Icons", position: "ST", baseRating: 87 },
-  { name: "Arjen Robben", realTeam: "Icons", position: "RW", baseRating: 87 },
-  { name: "Franck Ribéry", realTeam: "Icons", position: "LW", baseRating: 87 },
-  { name: "Wesley Sneijder", realTeam: "Icons", position: "CAM", baseRating: 86 },
-  { name: "Xabi Alonso", realTeam: "Icons", position: "CDM", baseRating: 87 },
-  { name: "Sergio Ramos", realTeam: "Icons", position: "CB", baseRating: 88 },
-  { name: "Gerard Piqué", realTeam: "Icons", position: "CB", baseRating: 86 },
-  { name: "Dani Alves", realTeam: "Icons", position: "RB", baseRating: 86 },
-  { name: "Marcelo", realTeam: "Icons", position: "LB", baseRating: 86 },
-  { name: "Manuel Neuer", realTeam: "Icons", position: "GK", baseRating: 89 },
-  { name: "Edwin van der Sar", realTeam: "Icons", position: "GK", baseRating: 88 },
-  { name: "Sócrates", realTeam: "Icons", position: "CAM", baseRating: 88 },
-  { name: "Zico", realTeam: "Icons", position: "CAM", baseRating: 91 },
-  { name: "Hristo Stoichkov", realTeam: "Icons", position: "ST", baseRating: 88 },
-  { name: "Gheorghe Hagi", realTeam: "Icons", position: "CAM", baseRating: 88 },
+  year?: number;
+  league?: string;
+  nation?: string;
+};
+
+type LegendFile = {
+  players: IconCatalogEntry[];
+};
+
+const ALLOWED_POSITIONS = new Set([
+  "GK", "CB", "LB", "RB", "CDM", "CM", "CAM", "LM", "RM", "LW", "RW", "ST", "CF",
+]);
+
+function loadAllTimeCatalog(): IconCatalogEntry[] {
+  const filePath = path.join(process.cwd(), "data", "all-time-legends.json");
+  if (!fs.existsSync(filePath)) {
+    console.warn("[icons] data/all-time-legends.json missing — using fallback legends");
+    return FALLBACK_LEGENDS;
+  }
+
+  const file = JSON.parse(fs.readFileSync(filePath, "utf8")) as LegendFile;
+  const seen = new Set<string>();
+  const players: IconCatalogEntry[] = [];
+
+  for (const raw of file.players ?? []) {
+    const name = String(raw.name ?? "").trim();
+    const position = String(raw.position ?? "").trim().toUpperCase();
+    const realTeam = String(raw.realTeam ?? "").trim();
+    const baseRating = Number(raw.baseRating);
+    if (!name || !realTeam) continue;
+    if (!ALLOWED_POSITIONS.has(position)) continue;
+    if (!Number.isFinite(baseRating) || baseRating < 80 || baseRating > 99) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    players.push({
+      name,
+      realTeam,
+      position: position === "CF" ? "ST" : position,
+      baseRating,
+      year: raw.year,
+      league: raw.league || "All-time",
+      nation: raw.nation,
+    });
+  }
+
+  return players.length > 0 ? players : FALLBACK_LEGENDS;
+}
+
+const FALLBACK_LEGENDS: IconCatalogEntry[] = [
+  { name: "Lionel Messi 2012", realTeam: "Barcelona", position: "RW", baseRating: 97, year: 2012, league: "La Liga" },
+  { name: "Diego Maradona 1986", realTeam: "Argentina", position: "CAM", baseRating: 96, year: 1986, league: "World Cup" },
+  { name: "Pelé 1970", realTeam: "Brazil", position: "ST", baseRating: 96, year: 1970, league: "World Cup" },
+  { name: "Cristiano Ronaldo 2017", realTeam: "Real Madrid", position: "ST", baseRating: 95, year: 2017, league: "La Liga" },
 ];
+
+/** All-time career-year legends (Messi 2009, Messi 2012, …) — not FIFA cards. */
+export const ICON_CATALOG: IconCatalogEntry[] = loadAllTimeCatalog();
 
 export function iconMarketValue(rating: number) {
   return rating * 1_000_000;
+}
+
+/** Split "Lionel Messi 2009" into display name + year for cards. */
+export function parseAllTimePlayer(name: string, realTeam?: string) {
+  const match = name.trim().match(/^(.*?)\s+(19\d{2}|20\d{2})$/);
+  if (!match) {
+    return { displayName: name, year: null as number | null, club: realTeam ?? "" };
+  }
+  return {
+    displayName: match[1],
+    year: Number(match[2]),
+    club: realTeam ?? "",
+  };
 }

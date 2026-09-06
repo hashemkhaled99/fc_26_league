@@ -33,7 +33,7 @@ export async function ensureIconPool(roomId: string) {
       roomId,
       name: i.name,
       realTeam: i.realTeam,
-      league: "Icons",
+      league: i.league ?? "All-time",
       position: i.position === "CF" ? "ST" : i.position,
       baseRating: i.baseRating,
       marketValue: iconMarketValue(i.baseRating),

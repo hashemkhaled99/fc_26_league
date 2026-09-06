@@ -44,7 +44,7 @@ async function ensureHeroDraftPool(roomId: string) {
         roomId,
         name: i.name,
         realTeam: i.realTeam,
-        league: "Icons",
+        league: i.league ?? "All-time",
         position: normalizePos(i.position),
         baseRating: i.baseRating,
         marketValue: iconMarketValue(i.baseRating),
@@ -211,6 +211,7 @@ export async function startHeroDraft(roomCode: string) {
 
 export async function beginRound(roomCode: string) {
   const room = await loadRoomDraft(roomCode);
+  await ensureHeroDraftPool(room.id);
   const state = room.heroDraftState!;
   if (state.status !== "in_progress") {
     throw new Error("Draft is not in progress");
@@ -431,6 +432,47 @@ export async function processExpiredBidTurns() {
       console.error("Hero draft auto-pass failed:", err);
     }
   }
+
+  const stuckClosed = await prisma.heroDraftState.findMany({
+    where: {
+      status: "in_progress",
+      currentRoundTurnUserId: null,
+      currentRoundHighestBidderId: { not: null },
+      currentAuctionedPlayerId: { not: null },
+    },
+    include: { room: { select: { code: true } } },
+    take: 10,
+  });
+  for (const s of stuckClosed) {
+    try {
+      if (s.currentRoundHighestBidderId == null || s.currentRoundHighestBid == null) continue;
+      if (s.currentSlotIndex != null && s.filledSlotIndexes.includes(s.currentSlotIndex)) {
+        continue;
+      }
+      await resolveRoundAuction(
+        s.room.code,
+        s.currentRoundHighestBidderId,
+        s.currentRoundHighestBid
+      );
+    } catch (err) {
+      console.error("Hero draft stuck-round recover failed:", err);
+    }
+  }
+
+  const awaiting = await prisma.heroDraftState.findMany({
+    where: { status: "awaiting_releases" },
+    include: { room: { select: { code: true } } },
+    take: 10,
+  });
+  for (const s of awaiting) {
+    try {
+      if (s.pendingReleaseUserIds.length === 0) {
+        await finishRoundAdvance(s.room.code, s.filledSlotIndexes);
+      }
+    } catch (err) {
+      console.error("Hero draft awaiting-releases recover failed:", err);
+    }
+  }
 }
 
 async function resolveRoundAuction(
@@ -440,10 +482,71 @@ async function resolveRoundAuction(
 ) {
   const room = await loadRoomDraft(roomCode);
   const state = room.heroDraftState!;
-  const slotIndex = state.currentSlotIndex!;
+
+  if (state.status === "awaiting_releases") {
+    return { ok: true as const, awaitingReleases: true };
+  }
+
+  const slotIndex = state.currentSlotIndex;
+  const playerId = state.currentAuctionedPlayerId;
+  if (slotIndex == null || !playerId) {
+    throw new Error("No auction in progress to resolve");
+  }
+  if (state.filledSlotIndexes.includes(slotIndex)) {
+    if (state.pendingReleaseUserIds.length > 0) {
+      await prisma.heroDraftState.update({
+        where: { roomId: room.id },
+        data: {
+          status: "awaiting_releases",
+          currentRoundTurnUserId: null,
+          currentRoundTurnExpiresAt: null,
+        },
+      });
+      return { ok: true as const, awaitingReleases: true };
+    }
+    return { ok: true as const, alreadyResolved: true };
+  }
+
+  const existingHistory = await prisma.draftRoundHistory.findUnique({
+    where: {
+      roomId_roundIndex: { roomId: room.id, roundIndex: state.currentRound },
+    },
+  });
+  if (existingHistory) {
+    const filled = [...state.filledSlotIndexes, slotIndex];
+    if (state.pendingReleaseUserIds.length > 0) {
+      await prisma.heroDraftState.update({
+        where: { roomId: room.id },
+        data: {
+          status: "awaiting_releases",
+          filledSlotIndexes: filled,
+          currentRoundTurnUserId: null,
+          currentRoundTurnExpiresAt: null,
+        },
+      });
+      const rolls = existingHistory.randomRolls as Array<{
+        userId: string;
+        playerId: string;
+        deductionAmount: number;
+      }>;
+      for (const uid of state.pendingReleaseUserIds) {
+        const roll = rolls.find((r) => r.userId === uid);
+        const user = room.users.find((u) => u.id === uid);
+        await emitToRoom(room.code, "randomRoll:insufficientFunds", {
+          userId: uid,
+          requiredAmount: roll?.deductionAmount ?? 0,
+          budget: user?.budget ?? 0,
+          playerId: roll?.playerId ?? "",
+          roundIndex: state.currentRound,
+        });
+      }
+      return { ok: true as const, awaitingReleases: true };
+    }
+    return finishRoundAdvance(room.code, filled);
+  }
+
   const template = (state.slotTemplate as DraftSlotDef[]) ?? DEFAULT_SLOT_TEMPLATE;
   const slot = template[slotIndex];
-  const playerId = state.currentAuctionedPlayerId!;
   const isGolden = state.goldenRoundIndex === state.currentRound;
   const lastBids =
     state.currentRoundLastBids && typeof state.currentRoundLastBids === "object"
@@ -452,27 +555,32 @@ async function resolveRoundAuction(
   const weights = (state.tierWeights as TierWeights) ?? DEFAULT_TIER_WEIGHTS;
   const passiveRatio = room.heroDraftSettings?.passiveDeductionRatio ?? 0.5;
 
-  // Charge winner + assign squad slot
-  await prisma.$transaction([
-    prisma.user.update({
-      where: { id: winnerId },
-      data: { budget: { decrement: winningBid } },
-    }),
-    prisma.player.update({
-      where: { id: playerId },
-      data: { status: "owned" },
-    }),
-    prisma.squadPlayer.create({
-      data: {
-        userId: winnerId,
-        playerId,
-        isStarting: slot.isStarting,
-        purchasePrice: winningBid,
-        draftSlotIndex: slotIndex,
-        draftAcquisition: "auction",
-      },
-    }),
-  ]);
+  // Charge winner + assign squad slot (skip if a previous resolve already did this)
+  const winnerAlreadyOwns = await prisma.squadPlayer.findFirst({
+    where: { userId: winnerId, playerId },
+  });
+  if (!winnerAlreadyOwns) {
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: winnerId },
+        data: { budget: { decrement: winningBid } },
+      }),
+      prisma.player.update({
+        where: { id: playerId },
+        data: { status: "owned" },
+      }),
+      prisma.squadPlayer.create({
+        data: {
+          userId: winnerId,
+          playerId,
+          isStarting: slot.isStarting,
+          purchasePrice: winningBid,
+          draftSlotIndex: slotIndex,
+          draftAcquisition: "auction",
+        },
+      }),
+    ]);
+  }
 
   await emitToRoom(room.code, "auction:closed", {
     roundIndex: state.currentRound,
@@ -522,6 +630,35 @@ async function resolveRoundAuction(
       winningBid,
       passiveDeductionRatio: passiveRatio,
     });
+
+    const existingAtSlot = await prisma.squadPlayer.findFirst({
+      where: { userId: loser.id, draftSlotIndex: slotIndex },
+    });
+    if (existingAtSlot) {
+      usedIds.add(existingAtSlot.playerId);
+      const owned = await prisma.player.findUnique({ where: { id: existingAtSlot.playerId } });
+      randomRolls.push({
+        userId: loser.id,
+        playerId: existingAtSlot.playerId,
+        tier: owned?.tier ?? "GOLD",
+        rating: owned?.baseRating ?? 0,
+        lastBidAmount: deduction.lastBidAmount,
+        deductionAmount: deduction.amount,
+        deductionType: deduction.deductionType,
+      });
+      if (state.pendingReleaseUserIds.includes(loser.id)) {
+        pendingReleases.push(loser.id);
+        const freshUser = await prisma.user.findUniqueOrThrow({ where: { id: loser.id } });
+        await emitToRoom(room.code, "randomRoll:insufficientFunds", {
+          userId: loser.id,
+          requiredAmount: deduction.amount,
+          budget: freshUser.budget,
+          playerId: existingAtSlot.playerId,
+          roundIndex: state.currentRound,
+        });
+      }
+      continue;
+    }
 
     const picked = pickPlayerForSlot({
       pool: available
@@ -729,9 +866,6 @@ export async function forceReleasePlayer(
 ) {
   const room = await loadRoomDraft(roomCode);
   const state = room.heroDraftState!;
-  if (state.status !== "awaiting_releases") {
-    throw new Error("No pending releases");
-  }
   if (!state.pendingReleaseUserIds.includes(userId)) {
     throw new Error("You do not owe a release");
   }
@@ -745,6 +879,7 @@ export async function forceReleasePlayer(
 
   const rolls = history.randomRolls as Array<{
     userId: string;
+    playerId: string;
     deductionAmount: number;
   }>;
   const myRoll = rolls.find((r) => r.userId === userId);
@@ -762,6 +897,9 @@ export async function forceReleasePlayer(
   }
 
   const refund = squadEntry.purchasePrice;
+  if (refund <= 0) {
+    throw new Error("This player has no budget to recover — pick someone you paid for");
+  }
   const vacatedSlot = squadEntry.draftSlotIndex!;
   const template = (state.slotTemplate as DraftSlotDef[]) ?? DEFAULT_SLOT_TEMPLATE;
   const vacatedDef = template[vacatedSlot];
@@ -832,7 +970,17 @@ export async function forceReleasePlayer(
 
   const userAfter = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
   if (userAfter.budget < myRoll.deductionAmount) {
-    // Still can't afford — stay in pending for another release
+    await prisma.heroDraftState.update({
+      where: { roomId: room.id },
+      data: { status: "awaiting_releases" },
+    });
+    await emitToRoom(room.code, "randomRoll:insufficientFunds", {
+      userId,
+      requiredAmount: myRoll.deductionAmount,
+      budget: userAfter.budget,
+      playerId: myRoll.playerId,
+      roundIndex: state.currentRound,
+    });
     return { stillOwes: true as const };
   }
 
@@ -845,7 +993,7 @@ export async function forceReleasePlayer(
   if (remaining.length > 0) {
     await prisma.heroDraftState.update({
       where: { roomId: room.id },
-      data: { pendingReleaseUserIds: remaining },
+      data: { status: "awaiting_releases", pendingReleaseUserIds: remaining },
     });
     return { stillOwes: false as const, waitingOthers: true as const };
   }
@@ -949,8 +1097,39 @@ export async function processExpiredTradeWindows() {
 export async function forceAdvanceRound(roomCode: string) {
   const room = await loadRoomDraft(roomCode);
   const state = room.heroDraftState!;
+
+  if (state.status === "awaiting_releases" && state.pendingReleaseUserIds.length === 0) {
+    return finishRoundAdvance(roomCode, state.filledSlotIndexes);
+  }
+
+  if (state.status === "awaiting_releases" || state.pendingReleaseUserIds.length > 0) {
+    const names = room.users
+      .filter((u) => state.pendingReleaseUserIds.includes(u.id))
+      .map((u) => u.displayName)
+      .join(", ");
+    throw new Error(
+      `Waiting for ${names || "a manager"} to release a squad player and recover budget. The draft cannot advance until they pick someone to downgrade to Gold.`
+    );
+  }
+
   if (state.currentRoundTurnUserId) {
     return heroDraftPass(roomCode, state.currentRoundTurnUserId, true);
   }
+
+  // Bidding already closed (no current turn) but the round never resolved —
+  // finish assigning the winner / random rolls / forced releases.
+  if (
+    state.status === "in_progress" &&
+    state.currentRoundHighestBidderId &&
+    state.currentRoundHighestBid != null &&
+    state.currentAuctionedPlayerId
+  ) {
+    return resolveRoundAuction(
+      roomCode,
+      state.currentRoundHighestBidderId,
+      state.currentRoundHighestBid
+    );
+  }
+
   throw new Error("No active turn to advance");
 }

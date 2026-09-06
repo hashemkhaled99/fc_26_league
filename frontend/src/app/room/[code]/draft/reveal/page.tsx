@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { TierPlayerCard, type DraftPlayer } from "@/components/TierPlayerCard";
 import { formatMoney } from "@/lib/utils";
+import { apiPath, apiFetchInit, readApiJson } from "@/lib/api-base";
 import Link from "next/link";
 
 type Reveal = {
@@ -29,6 +30,32 @@ export default function DraftRevealPage() {
       /* ignore */
     }
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(apiPath(`/api/rooms/${code}/hero-draft`), apiFetchInit)
+      .then((res) =>
+        readApiJson<{
+          pendingRelease?: unknown;
+          state?: { pendingReleaseUserIds?: string[] };
+          me?: { id: string };
+        }>(res)
+      )
+      .then((payload) => {
+        if (cancelled) return;
+        const uid = payload.me?.id;
+        if (
+          payload.pendingRelease ||
+          (uid && payload.state?.pendingReleaseUserIds?.includes(uid))
+        ) {
+          router.replace(`/room/${code}/draft`);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [code, router]);
 
   if (!reveal?.player) {
     return (

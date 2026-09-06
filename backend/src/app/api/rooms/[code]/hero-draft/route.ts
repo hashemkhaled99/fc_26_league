@@ -58,6 +58,35 @@ export async function GET(_req: Request, { params }: Ctx) {
       orderBy: { draftSlotIndex: "asc" },
     });
 
+    const st = room.heroDraftState;
+    let pendingRelease: {
+      requiredAmount: number;
+      budget: number;
+      playerId: string;
+      unpaidSlotIndex: number | null;
+    } | null = null;
+
+    if (st && st.pendingReleaseUserIds.includes(session.userId!)) {
+      const history = await prisma.draftRoundHistory.findUnique({
+        where: {
+          roomId_roundIndex: { roomId: room.id, roundIndex: st.currentRound },
+        },
+      });
+      const rolls = (history?.randomRolls ?? []) as Array<{
+        userId: string;
+        playerId: string;
+        deductionAmount: number;
+      }>;
+      const myRoll = rolls.find((r) => r.userId === session.userId);
+      const meUser = room.users.find((u) => u.id === session.userId);
+      pendingRelease = {
+        requiredAmount: myRoll?.deductionAmount ?? 0,
+        budget: meUser?.budget ?? 0,
+        playerId: myRoll?.playerId ?? "",
+        unpaidSlotIndex: history?.slotIndex ?? st.currentSlotIndex,
+      };
+    }
+
     return apiSuccess({
       room: {
         id: room.id,
@@ -72,6 +101,7 @@ export async function GET(_req: Request, { params }: Ctx) {
       auctionedPlayer,
       mySquad: squad,
       me: room.users.find((u) => u.id === session.userId),
+      pendingRelease,
     });
   } catch (err) {
     console.error("Hero draft GET error:", err);

@@ -3,6 +3,7 @@
 import { apiPath, apiFetchInit, readApiJson } from "@/lib/api-base";
 import { formatMoney } from "@/lib/utils";
 import { getPublicSocketUrl } from "@/lib/public-env";
+import { getTierVisual } from "@/lib/hero-draft-ui";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
@@ -38,6 +39,13 @@ type DraftState = {
   tradeWindowEndsAt: string | null;
 };
 
+type ReleasePrompt = {
+  requiredAmount: number;
+  budget: number;
+  playerId: string;
+  unpaidSlotIndex?: number | null;
+};
+
 type DraftPayload = {
   room: { id: string; code: string; name: string; mode: string; phase: string };
   settings: { bidTurnTimeoutSeconds: number; turnHolderMustOpenBid: boolean } | null;
@@ -46,6 +54,7 @@ type DraftPayload = {
   auctionedPlayer: DraftPlayer | null;
   mySquad: Array<{ id: string; draftSlotIndex: number | null; purchasePrice: number; player: DraftPlayer }>;
   me: DraftUser | null;
+  pendingRelease: ReleasePrompt | null;
   error?: string;
 };
 
@@ -56,12 +65,6 @@ type RevealPayload = {
   deductionAmount: number;
   deductionType: string;
   roundIndex: number;
-};
-
-type ReleasePrompt = {
-  requiredAmount: number;
-  budget: number;
-  playerId: string;
 };
 
 function useCountdown(expiresAt: string | null) {
@@ -90,7 +93,6 @@ export function HeroDraftClient() {
   const [bidAmount, setBidAmount] = useState("");
   const [acting, setActing] = useState(false);
   const [goldenFlash, setGoldenFlash] = useState(false);
-  const [releasePrompt, setReleasePrompt] = useState<ReleasePrompt | null>(null);
   const [feed, setFeed] = useState<string[]>([]);
 
   const load = useCallback(async () => {
@@ -143,23 +145,27 @@ export function HeroDraftClient() {
       });
       s.on("randomRoll:revealed", (p: RevealPayload & { userId: string }) => {
         load().then((fresh) => {
-          if (fresh.me?.id === p.userId) {
-            const player = fresh.mySquad.find((sp) => sp.player.id === p.playerId)?.player;
-            const payload = { ...p, player };
-            try {
-              sessionStorage.setItem("heroDraftReveal", JSON.stringify(payload));
-            } catch {
-              /* ignore */
-            }
-            router.push(`/room/${code}/draft/reveal`);
+          if (fresh.me?.id !== p.userId) return;
+          if (
+            fresh.pendingRelease ||
+            fresh.state?.pendingReleaseUserIds?.includes(p.userId)
+          ) {
+            return;
           }
+          const player = fresh.mySquad.find((sp) => sp.player.id === p.playerId)?.player;
+          const payload = { ...p, player };
+          try {
+            sessionStorage.setItem("heroDraftReveal", JSON.stringify(payload));
+          } catch {
+            /* ignore */
+          }
+          router.push(`/room/${code}/draft/reveal`);
         });
       });
-      s.on("randomRoll:insufficientFunds", (p: ReleasePrompt & { userId: string }) => {
-        load().then((fresh) => {
-          if (fresh.me?.id === p.userId) setReleasePrompt(p);
-        });
+      s.on("randomRoll:insufficientFunds", () => {
+        load().catch(() => undefined);
       });
+      s.on("squadSlot:downgraded", reload);
       s.on("draft:completed", (p: { next: string }) => {
         if (p.next === "trade_window") router.push(`/room/${code}/trade-window`);
         else router.push(`/room/${code}/draft-recap`);
@@ -234,6 +240,35 @@ export function HeroDraftClient() {
   const holderName = state.currentTurnHolderId
     ? usersById.get(state.currentTurnHolderId)?.teamName ?? "…"
     : "—";
+  const pendingIds = state.pendingReleaseUserIds ?? [];
+  const awaitingReleases = state.status === "awaiting_releases" || pendingIds.length > 0;
+  const iOweRelease = Boolean(me && pendingIds.includes(me.id));
+  const releasePrompt =
+    data.pendingRelease ??
+    (iOweRelease && me
+      ? {
+          requiredAmount: 0,
+          budget: me.budget,
+          playerId: "",
+          unpaidSlotIndex: state.currentSlotIndex,
+        }
+      : null);
+  const shortfall = releasePrompt
+    ? Math.max(0, releasePrompt.requiredAmount - releasePrompt.budget)
+    : 0;
+  const waitingNames = pendingIds
+    .map((id) => usersById.get(id)?.teamName ?? "a manager")
+    .join(", ");
+  const releasableSquad = [...data.mySquad]
+    .map((sp) => {
+      const isUnpaidRoll =
+        sp.player.id === releasePrompt?.playerId ||
+        (releasePrompt?.unpaidSlotIndex != null &&
+          sp.draftSlotIndex === releasePrompt.unpaidSlotIndex);
+      const noRefund = sp.purchasePrice <= 0;
+      return { ...sp, isUnpaidRoll, noRefund, canRelease: !isUnpaidRoll && !noRefund };
+    })
+    .sort((a, b) => b.purchasePrice - a.purchasePrice);
 
   return (
     <RoomLayoutShell
@@ -263,6 +298,64 @@ export function HeroDraftClient() {
         )}
       </AnimatePresence>
 
+      {iOweRelease && releasePrompt && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4">
+          <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl border border-red-400/40 bg-fc-charcoal p-5 shadow-[0_0_40px_rgba(248,113,113,0.25)] space-y-4">
+            <div>
+              <p className="text-xs uppercase tracking-widest text-red-300">Budget shortfall</p>
+              <h3 className="font-display text-2xl font-bold text-white mt-1">Release a player to continue</h3>
+              <p className="text-sm text-fc-muted mt-2">
+                {releasePrompt.requiredAmount > 0 ? (
+                  <>
+                    This round&apos;s roll costs {formatMoney(releasePrompt.requiredAmount)} but you only have{" "}
+                    {formatMoney(releasePrompt.budget)}
+                    {shortfall > 0 ? ` (need ${formatMoney(shortfall)} more)` : ""}.
+                  </>
+                ) : (
+                  <>You cannot afford this round&apos;s roll with {formatMoney(releasePrompt.budget)}.</>
+                )}{" "}
+                Pick a squad player to release — they go back to the pool, you get the spent budget back,
+                and that slot is filled with a Gold player.
+              </p>
+            </div>
+            <ul className="space-y-2">
+              {releasableSquad.map((sp) => {
+                const visual = getTierVisual(sp.player.tier ?? "GOLD");
+                return (
+                  <li
+                    key={sp.id}
+                    className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/30 px-3 py-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-semibold text-white truncate">{sp.player.name}</p>
+                      <p className="text-xs text-fc-muted">
+                        #{(sp.draftSlotIndex ?? 0) + 1} · {sp.player.position} · {sp.player.baseRating}{" "}
+                        <span className={`ml-1 rounded px-1.5 py-0.5 ${visual.badge}`}>{visual.label}</span>
+                      </p>
+                      {sp.isUnpaidRoll ? (
+                        <p className="text-xs text-amber-300 mt-1">This round&apos;s unpaid roll — cannot release yet</p>
+                      ) : sp.noRefund ? (
+                        <p className="text-xs text-fc-muted mt-1">No budget to recover</p>
+                      ) : (
+                        <p className="text-xs text-fc-green mt-1">Refund {formatMoney(sp.purchasePrice)}</p>
+                      )}
+                    </div>
+                    <button
+                      className="shrink-0 text-xs font-bold text-red-200 border border-red-400/50 rounded-lg px-3 py-2 disabled:opacity-40"
+                      disabled={acting || !sp.canRelease}
+                      onClick={() => act({ action: "release", squadPlayerId: sp.id })}
+                    >
+                      {acting ? "…" : "Release"}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+            {error && <p className="text-sm text-red-400">{error}</p>}
+          </div>
+        </div>
+      )}
+
       <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
         <div className="space-y-4">
           <div className="flex flex-wrap items-end justify-between gap-3">
@@ -270,15 +363,30 @@ export function HeroDraftClient() {
               <p className="text-xs uppercase tracking-widest text-fc-muted">
                 Round {state.currentRound + 1} / 18 · Slot {(state.currentSlotIndex ?? 0) + 1}
               </p>
-              <h2 className="font-display text-2xl font-bold text-white">Live Draft</h2>
+              <h2 className="font-display text-2xl font-bold text-white">
+                {awaitingReleases ? "Draft paused" : "Live Draft"}
+              </h2>
             </div>
-            <div className="rounded-xl border border-white/10 bg-fc-charcoal/60 px-4 py-2 text-right">
-              <p className="text-xs text-fc-muted">Turn timer</p>
-              <p className={`font-mono text-2xl font-bold ${secondsLeft <= 5 ? "text-red-400" : "text-fc-gold"}`}>
-                {secondsLeft}s
+            {!awaitingReleases && (
+              <div className="rounded-xl border border-white/10 bg-fc-charcoal/60 px-4 py-2 text-right">
+                <p className="text-xs text-fc-muted">Turn timer</p>
+                <p className={`font-mono text-2xl font-bold ${secondsLeft <= 5 ? "text-red-400" : "text-fc-gold"}`}>
+                  {secondsLeft}s
+                </p>
+              </div>
+            )}
+          </div>
+
+          {awaitingReleases && (
+            <div className="rounded-xl border border-amber-400/40 bg-amber-500/10 p-4">
+              <p className="font-display font-bold text-amber-200">Waiting for a budget release</p>
+              <p className="text-sm text-fc-muted mt-1">
+                {iOweRelease
+                  ? "You cannot afford this round's roll. Choose a squad player above to downgrade to Gold and recover budget."
+                  : `${waitingNames || "A manager"} must release a squad player (downgrade to Gold) before the draft can continue.`}
               </p>
             </div>
-          </div>
+          )}
 
           {auctionedPlayer ? (
             <TierPlayerCard player={auctionedPlayer} size="lg" highlight />
@@ -288,21 +396,23 @@ export function HeroDraftClient() {
             </div>
           )}
 
-          <div className="rounded-xl border border-white/10 bg-fc-card/50 p-4 space-y-2">
-            <p className="text-sm text-fc-muted">
-              Turn holder: <span className="text-white font-semibold">{holderName}</span>
-            </p>
-            <p className="text-sm">
-              Now bidding:{" "}
-              <span className={`font-semibold ${isMyTurn ? "text-fc-gold" : "text-white"}`}>{turnName}</span>
-              {isMyTurn && <span className="ml-2 text-xs text-fc-gold animate-pulse">YOUR TURN</span>}
-            </p>
-            <p className="font-mono text-lg text-fc-green">
-              Highest: {state.currentRoundHighestBid != null ? formatMoney(state.currentRoundHighestBid) : "—"}
-            </p>
-          </div>
+          {!awaitingReleases && (
+            <div className="rounded-xl border border-white/10 bg-fc-card/50 p-4 space-y-2">
+              <p className="text-sm text-fc-muted">
+                Turn holder: <span className="text-white font-semibold">{holderName}</span>
+              </p>
+              <p className="text-sm">
+                Now bidding:{" "}
+                <span className={`font-semibold ${isMyTurn ? "text-fc-gold" : "text-white"}`}>{turnName}</span>
+                {isMyTurn && <span className="ml-2 text-xs text-fc-gold animate-pulse">YOUR TURN</span>}
+              </p>
+              <p className="font-mono text-lg text-fc-green">
+                Highest: {state.currentRoundHighestBid != null ? formatMoney(state.currentRoundHighestBid) : "—"}
+              </p>
+            </div>
+          )}
 
-          {isMyTurn && (
+          {isMyTurn && !awaitingReleases && (
             <div className="rounded-xl border border-fc-gold/30 bg-fc-gold/5 p-4 space-y-3">
               <label className="block text-sm text-fc-muted">
                 {state.currentRoundHighestBid == null
@@ -357,63 +467,48 @@ export function HeroDraftClient() {
             </div>
           )}
 
-          {error && <p className="text-sm text-red-400">{error}</p>}
-
-          {releasePrompt && (
-            <div className="rounded-xl border border-red-400/40 bg-red-500/10 p-4 space-y-3">
-              <h3 className="font-display font-bold text-red-300">Insufficient funds</h3>
-              <p className="text-sm text-fc-muted">
-                Need {formatMoney(releasePrompt.requiredAmount)} — you have {formatMoney(releasePrompt.budget)}.
-                Release an earlier player to continue.
-              </p>
-              <ul className="space-y-2 max-h-48 overflow-y-auto">
-                {data.mySquad
-                  .filter((sp) => sp.player.id !== releasePrompt.playerId)
-                  .map((sp) => (
-                    <li key={sp.id} className="flex items-center justify-between gap-2 rounded-lg bg-black/30 px-3 py-2">
-                      <span className="text-sm">
-                        {sp.player.name}{" "}
-                        <span className="text-fc-muted">({formatMoney(sp.purchasePrice)})</span>
-                      </span>
-                      <button
-                        className="text-xs font-bold text-red-300 border border-red-400/40 rounded px-2 py-1"
-                        disabled={acting}
-                        onClick={async () => {
-                          await act({ action: "release", squadPlayerId: sp.id });
-                          setReleasePrompt(null);
-                        }}
-                      >
-                        Release
-                      </button>
-                    </li>
-                  ))}
-              </ul>
-            </div>
-          )}
+          {error && !iOweRelease && <p className="text-sm text-red-400">{error}</p>}
         </div>
 
         <div className="space-y-4">
-          <div className="rounded-xl border border-white/10 bg-fc-card/40 p-4">
-            <h3 className="font-display font-semibold mb-3">Active bidders</h3>
-            <ul className="space-y-1.5">
-              {state.biddingOrder.map((id) => {
-                const u = usersById.get(id);
-                const passed = state.currentRoundPassedBidders.includes(id);
-                const active = state.currentRoundActiveBidders.includes(id);
-                return (
-                  <li
-                    key={id}
-                    className={`flex justify-between text-sm px-2 py-1.5 rounded ${
-                      id === state.currentRoundTurnUserId ? "bg-fc-gold/15 text-fc-gold" : ""
-                    } ${passed ? "opacity-40 line-through" : ""}`}
-                  >
-                    <span>{u?.teamName ?? id.slice(0, 6)}</span>
-                    <span className="text-fc-muted text-xs">{active ? "in" : "out"}</span>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
+          {awaitingReleases ? (
+            <div className="rounded-xl border border-amber-400/30 bg-fc-card/40 p-4">
+              <h3 className="font-display font-semibold mb-3">Managers releasing</h3>
+              <ul className="space-y-1.5">
+                {pendingIds.map((id) => {
+                  const u = usersById.get(id);
+                  return (
+                    <li key={id} className="flex justify-between text-sm px-2 py-1.5 rounded bg-amber-500/10 text-amber-200">
+                      <span>{u?.teamName ?? id.slice(0, 6)}</span>
+                      <span className="text-xs">{id === me?.id ? "your turn" : "waiting"}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-white/10 bg-fc-card/40 p-4">
+              <h3 className="font-display font-semibold mb-3">Active bidders</h3>
+              <ul className="space-y-1.5">
+                {state.biddingOrder.map((id) => {
+                  const u = usersById.get(id);
+                  const passed = state.currentRoundPassedBidders.includes(id);
+                  const active = state.currentRoundActiveBidders.includes(id);
+                  return (
+                    <li
+                      key={id}
+                      className={`flex justify-between text-sm px-2 py-1.5 rounded ${
+                        id === state.currentRoundTurnUserId ? "bg-fc-gold/15 text-fc-gold" : ""
+                      } ${passed ? "opacity-40 line-through" : ""}`}
+                    >
+                      <span>{u?.teamName ?? id.slice(0, 6)}</span>
+                      <span className="text-fc-muted text-xs">{active ? "in" : "out"}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
 
           <div className="rounded-xl border border-white/10 bg-fc-card/40 p-4">
             <h3 className="font-display font-semibold mb-3">Bid feed</h3>
@@ -440,7 +535,7 @@ export function HeroDraftClient() {
             </ul>
           </div>
 
-          {me?.isAdmin && (
+          {me?.isAdmin && !awaitingReleases && (
             <button
               className="fc-btn-secondary w-full text-sm"
               disabled={acting}
