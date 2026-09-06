@@ -76,12 +76,15 @@ export default function SquadPage() {
   const formationRef = useRef(formationId);
   const loadGen = useRef(0);
   const busyRef = useRef(false);
+  const dataRef = useRef<SquadData | null>(null);
+  const pendingRefreshRef = useRef(false);
 
   formationRef.current = formationId;
   busyRef.current = busy;
+  dataRef.current = data;
 
   const applySquad = useCallback(
-    (squad: SquadData, opts?: { refillEmpty?: boolean; preferSlots?: Record<string, string | null> }) => {
+    (squad: SquadData, opts?: { preferSlots?: Record<string, string | null> }) => {
       setData(squad);
       userIdRef.current = squad.user.id;
       setSlotMap((prev) => {
@@ -89,7 +92,7 @@ export default function SquadPage() {
         const saved = loadSavedSlots(code, formationRef.current);
         const merged = { ...(saved ?? {}), ...base };
         const next = reconcileSlotMap(formationRef.current, squad.starters, merged, {
-          refillEmpty: opts?.refillEmpty ?? false,
+          refillEmpty: true,
         });
         saveSlots(code, formationRef.current, next);
         return next;
@@ -125,7 +128,7 @@ export default function SquadPage() {
       try {
         const squad = await loadSquad();
         if (cancelled || gen !== loadGen.current) return;
-        applySquad(squad, { refillEmpty: true });
+        applySquad(squad);
         setError("");
       } catch (e) {
         // One short retry — backend often recovers after pool backoff.
@@ -134,7 +137,7 @@ export default function SquadPage() {
         try {
           const squad = await loadSquad();
           if (cancelled || gen !== loadGen.current) return;
-          applySquad(squad, { refillEmpty: true });
+          applySquad(squad);
           setError("");
         } catch (e2) {
           if (!cancelled) setError(e2 instanceof Error ? e2.message : String(e));
@@ -160,14 +163,22 @@ export default function SquadPage() {
 
       const refreshTimer = { current: null as ReturnType<typeof setTimeout> | null };
       const refresh = () => {
-        if (busyRef.current) return;
+        if (busyRef.current) {
+          pendingRefreshRef.current = true;
+          return;
+        }
         if (refreshTimer.current) clearTimeout(refreshTimer.current);
         refreshTimer.current = setTimeout(() => {
+          if (busyRef.current) {
+            pendingRefreshRef.current = true;
+            return;
+          }
+          pendingRefreshRef.current = false;
           const gen = ++loadGen.current;
           loadSquad()
             .then((squad) => {
               if (gen !== loadGen.current) return;
-              applySquad(squad, { refillEmpty: false });
+              applySquad(squad);
             })
             .catch(() => undefined);
         }, 400);
@@ -179,7 +190,10 @@ export default function SquadPage() {
         }
         refresh();
       });
-      // Do not reload on every auction:closed — server already emits squad:updated for winners.
+      s.on("round:completed", refresh);
+      s.on("auction:closed", refresh);
+      s.on("squadSlot:downgraded", refresh);
+      s.on("randomRoll:revealed", refresh);
       onBudgetUpdated(s, refresh);
       s.on(
         "boost:applied",
@@ -221,6 +235,18 @@ export default function SquadPage() {
 
     return () => socket?.disconnect();
   }, [code, loadSquad, applySquad]);
+
+  useEffect(() => {
+    if (busy || !pendingRefreshRef.current) return;
+    pendingRefreshRef.current = false;
+    const gen = ++loadGen.current;
+    loadSquad()
+      .then((squad) => {
+        if (gen !== loadGen.current) return;
+        applySquad(squad);
+      })
+      .catch(() => undefined);
+  }, [busy, loadSquad, applySquad]);
 
   function changeFormation(id: FormationId) {
     setFormationId(id);
@@ -267,35 +293,60 @@ export default function SquadPage() {
     });
   }
 
+  async function postToggle(entryId: string, isStarting: boolean) {
+    const live = dataRef.current;
+    const all = live ? [...live.starters, ...live.bench] : [];
+    const entry = all.find((e) => e.id === entryId);
+    const body = entry?.loanId
+      ? { loanId: entry.loanId, isStarting }
+      : { squadPlayerId: entryId, isStarting };
+
+    const res = await fetch(apiPath(`/api/rooms/${code}/squad/toggle-starter`), {
+      ...apiFetchInit,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error ?? "Could not update");
+  }
+
   async function toggleStarter(entryId: string, isStarting: boolean) {
     setBusy(true);
     setError("");
     optimisticMove(entryId, isStarting);
     try {
-      const all = data ? [...data.starters, ...data.bench] : [];
-      const entry = all.find((e) => e.id === entryId);
-      const body = entry?.loanId
-        ? { loanId: entry.loanId, isStarting }
-        : { squadPlayerId: entryId, isStarting };
-
-      const res = await fetch(apiPath(`/api/rooms/${code}/squad/toggle-starter`), {
-        ...apiFetchInit,
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const result = await res.json();
-      if (!res.ok) throw new Error(result.error ?? "Could not update");
-      // Soft sync — keep current slot map
+      await postToggle(entryId, isStarting);
       const gen = ++loadGen.current;
       const squad = await loadSquad();
       if (gen !== loadGen.current) return;
-      applySquad(squad, { refillEmpty: false });
+      applySquad(squad);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error");
-      // rollback from server truth
       const squad = await loadSquad().catch(() => null);
-      if (squad) applySquad(squad, { refillEmpty: false });
+      if (squad) applySquad(squad);
+      throw e;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function swapStarter(outgoingId: string, incomingId: string) {
+    setBusy(true);
+    setError("");
+    optimisticMove(outgoingId, false);
+    optimisticMove(incomingId, true);
+    try {
+      await postToggle(outgoingId, false);
+      await postToggle(incomingId, true);
+      const gen = ++loadGen.current;
+      const squad = await loadSquad();
+      if (gen !== loadGen.current) return;
+      applySquad(squad);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error");
+      const squad = await loadSquad().catch(() => null);
+      if (squad) applySquad(squad);
       throw e;
     } finally {
       setBusy(false);
@@ -312,7 +363,7 @@ export default function SquadPage() {
     const result = await res.json();
     if (!res.ok) throw new Error(result.error ?? "Resale failed");
     const squad = await loadSquad();
-    applySquad(squad, { refillEmpty: false });
+    applySquad(squad);
     setToast(`Listed for ${formatMoney(startingPrice)} on the market`);
     setTimeout(() => setToast(null), 3500);
   }
@@ -327,7 +378,7 @@ export default function SquadPage() {
     const result = await res.json();
     if (!res.ok) throw new Error(result.error ?? "Instant sell failed");
     const squad = await loadSquad();
-    applySquad(squad, { refillEmpty: false });
+    applySquad(squad);
     setToast(
       result.message ??
         `Instant sold for ${formatMoney(result.refund ?? 0)} (50% refund)`
@@ -349,7 +400,7 @@ export default function SquadPage() {
             loadSquad()
               .then((squad) => {
                 if (gen !== loadGen.current) return;
-                applySquad(squad, { refillEmpty: true });
+                applySquad(squad);
               })
               .catch((e) => setError(e instanceof Error ? e.message : "Failed to load squad"));
           }}
@@ -501,6 +552,7 @@ export default function SquadPage() {
             canResale={canResale}
             onPlaceStarter={(id) => toggleStarter(id, true)}
             onBench={(id) => toggleStarter(id, false)}
+            onSwapStarter={(outId, inId) => swapStarter(outId, inId)}
             onSell={(entry) => {
               setPreferInstantSell(false);
               setResaleTarget(entry);

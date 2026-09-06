@@ -20,7 +20,7 @@ describe("Tier visuals", () => {
   it("distinguishes Gold / Hero / Icon styling", () => {
     expect(getTierVisual("GOLD").label).toBe("Gold");
     expect(getTierVisual("HERO").label).toBe("Hero");
-    expect(getTierVisual("ICON").label).toBe("Icon");
+    expect(getTierVisual("ICON").label).toBe("All-time");
     expect(getTierVisual("ICON").border).toContain("violet");
     expect(getTierVisual("HERO").border).toContain("amber");
   });

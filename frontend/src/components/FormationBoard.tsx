@@ -9,6 +9,7 @@ import {
   positionFit,
   type FormationId,
 } from "@/lib/formations";
+import { parseAllTimePlayer } from "@/lib/hero-draft-ui";
 import { parseBoostedStats } from "@/lib/players/faceStats";
 
 const DRAG_TYPE = "application/x-squad-player";
@@ -22,6 +23,8 @@ interface FormationBoardProps {
   onSlotMapChange: (next: Record<string, string | null>) => void;
   onPlaceStarter: (squadPlayerId: string) => Promise<void>;
   onBench: (squadPlayerId: string) => Promise<void>;
+  /** Bench `outgoingId` and start `incomingId` in one move (full XI swap). */
+  onSwapStarter?: (outgoingId: string, incomingId: string) => Promise<void>;
   onSell: (entry: SquadEntry) => void;
   /** Opens sell modal focused on Instant Sell (optional). Falls back to onSell. */
   onInstantSell?: (entry: SquadEntry) => void;
@@ -64,6 +67,7 @@ function PitchCard({
   onSelect: (id: string) => void;
 }) {
   const dragged = useRef(false);
+  const { displayName } = parseAllTimePlayer(entry.player.name, entry.player.realTeam);
   const rating = entry.player.boostedRating ?? entry.player.baseRating;
   const boosted = isBoosted(entry);
 
@@ -88,7 +92,7 @@ function PitchCard({
         if (dragged.current) return;
         onOpenMenu(entry, e.clientX, e.clientY);
       }}
-      className={`w-[4.5rem] rounded-lg border px-1 py-1.5 text-center shadow-lg backdrop-blur-sm transition select-none touch-manipulation ${
+      className={`w-[3.75rem] sm:w-[4.5rem] rounded-lg border px-1 py-1.5 text-center shadow-lg backdrop-blur-sm transition select-none touch-manipulation ${
         touchMode ? "cursor-pointer active:scale-95" : "cursor-grab active:cursor-grabbing hover:border-fc-gold hover:scale-105"
       } ${
         selected
@@ -101,7 +105,7 @@ function PitchCard({
       <div className="font-display text-base font-bold text-fc-gold leading-none">{rating}</div>
       <div className="mt-0.5 text-[9px] font-bold text-fc-green">{entry.player.position}</div>
       <div className="mt-0.5 truncate text-[9px] font-semibold text-white leading-tight">
-        {entry.player.name}
+        {displayName}
       </div>
     </div>
   );
@@ -121,6 +125,7 @@ function BenchChip({
   onSelect: (id: string) => void;
 }) {
   const dragged = useRef(false);
+  const { displayName, year } = parseAllTimePlayer(entry.player.name, entry.player.realTeam);
   const rating = entry.player.boostedRating ?? entry.player.baseRating;
   const boosted = isBoosted(entry);
 
@@ -154,7 +159,8 @@ function BenchChip({
           <span className="font-display text-lg font-bold text-fc-gold">{rating}</span>
           <span className="text-[10px] font-bold text-fc-muted">{entry.player.position}</span>
         </div>
-        <p className="truncate text-xs font-semibold mt-0.5">{entry.player.name}</p>
+        <p className="truncate text-xs font-semibold mt-0.5">{displayName}</p>
+        {year != null && <p className="truncate text-[10px] text-fc-muted">{year}</p>}
       </div>
     </div>
   );
@@ -169,6 +175,7 @@ export function FormationBoard({
   onSlotMapChange,
   onPlaceStarter,
   onBench,
+  onSwapStarter,
   onSell,
   onInstantSell,
   canResale,
@@ -191,16 +198,28 @@ export function FormationBoard({
     return map;
   }, [starters, bench]);
 
-  const selectedEntry = selectedId ? byId.get(selectedId) : undefined;
+  const pitchIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const id of Object.values(slotMap)) {
+      if (id) ids.add(id);
+    }
+    return ids;
+  }, [slotMap]);
 
-  const cacheRef = useRef(new Map<string, SquadEntry>());
-  useEffect(() => {
-    byId.forEach((v, k) => cacheRef.current.set(k, v));
-  }, [byId]);
+  const benchVisible = useMemo(
+    () => bench.filter((e) => !pitchIds.has(e.id)),
+    [bench, pitchIds]
+  );
+  const unplacedStarters = useMemo(
+    () => starters.filter((e) => !pitchIds.has(e.id)),
+    [starters, pitchIds]
+  );
+
+  const selectedEntry = selectedId ? byId.get(selectedId) : undefined;
 
   function resolveEntry(id: string | null | undefined): SquadEntry | undefined {
     if (!id) return undefined;
-    return byId.get(id) ?? cacheRef.current.get(id);
+    return byId.get(id);
   }
 
   const maxRow = Math.max(...formation.slots.map((s) => s.row));
@@ -211,25 +230,46 @@ export function FormationBoard({
   }
 
   async function placeInSlot(slotId: string, squadPlayerId: string) {
-    const next = { ...slotMap };
+    const incoming = byId.get(squadPlayerId);
+    if (!incoming || busy) return;
 
+    const next = { ...slotMap };
+    let incomingOldSlot: string | null = null;
     for (const key of Object.keys(next)) {
-      if (next[key] === squadPlayerId) next[key] = null;
+      if (next[key] === squadPlayerId) {
+        incomingOldSlot = key;
+        next[key] = null;
+      }
     }
 
     const existing = next[slotId];
     next[slotId] = squadPlayerId;
 
-    onSlotMapChange(next);
-    await onPlaceStarter(squadPlayerId);
-
     if (existing && existing !== squadPlayerId) {
+      if (incomingOldSlot && incomingOldSlot !== slotId) {
+        next[incomingOldSlot] = existing;
+        onSlotMapChange(next);
+        return;
+      }
       const empty = formation.slots.find((s) => !next[s.id]);
       if (empty) {
         next[empty.id] = existing;
-        onSlotMapChange({ ...next });
+        onSlotMapChange(next);
+        if (!incoming.isStarting) await onPlaceStarter(squadPlayerId);
+        return;
       }
+      onSlotMapChange(next);
+      if (onSwapStarter) {
+        await onSwapStarter(existing, squadPlayerId);
+      } else {
+        await onBench(existing);
+        await onPlaceStarter(squadPlayerId);
+      }
+      return;
     }
+
+    onSlotMapChange(next);
+    if (!incoming.isStarting) await onPlaceStarter(squadPlayerId);
   }
 
   async function handleDropOnSlot(slotId: string, e: React.DragEvent) {
@@ -251,6 +291,8 @@ export function FormationBoard({
     setDragOverBench(false);
     const id = e.dataTransfer.getData(DRAG_TYPE);
     if (!id || busy) return;
+    const entry = byId.get(id);
+    if (!entry?.isStarting) return;
 
     const next = { ...slotMap };
     for (const key of Object.keys(next)) {
@@ -278,12 +320,16 @@ export function FormationBoard({
     setMenu({ entry, x, y });
   }
 
+  const selectedName = selectedEntry
+    ? parseAllTimePlayer(selectedEntry.player.name, selectedEntry.player.realTeam).displayName
+    : "";
+
   return (
     <div className="space-y-4" onClick={() => { setMenu(null); if (touchMode) setSelectedId(null); }}>
       {touchMode && selectedEntry && (
         <div className="rounded-lg border border-fc-gold/40 bg-fc-gold/10 px-3 py-2 space-y-2">
           <p className="text-center text-sm text-fc-gold">
-            <span className="font-semibold">{selectedEntry.player.name}</span> selected — tap an empty slot, or use actions below
+            <span className="font-semibold">{selectedName}</span> selected — tap an empty slot, or use actions below
           </p>
           <div className="flex flex-wrap justify-center gap-2">
             {selectedEntry.isStarting ? (
@@ -448,7 +494,7 @@ export function FormationBoard({
                         />
                       ) : (
                         <div
-                          className={`flex h-[4.25rem] w-[4.5rem] flex-col items-center justify-center rounded-lg border border-dashed text-center touch-manipulation ${
+                          className={`flex h-[4.25rem] w-[3.75rem] sm:w-[4.5rem] flex-col items-center justify-center rounded-lg border border-dashed text-center touch-manipulation ${
                             tapTarget
                               ? "border-fc-gold bg-fc-gold/25 text-fc-gold animate-pulse"
                               : isOver
@@ -467,6 +513,29 @@ export function FormationBoard({
           ))}
         </div>
       </div>
+
+      {unplacedStarters.length > 0 && (
+        <div className="rounded-xl border border-amber-400/30 bg-amber-500/5 p-4">
+          <h3 className="font-display text-sm font-semibold text-amber-200 mb-2">
+            Not on the pitch ({unplacedStarters.length})
+          </h3>
+          <p className="text-xs text-fc-muted mb-3">
+            These starters have no formation slot yet. Drag them onto the pitch.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {unplacedStarters.map((entry) => (
+              <BenchChip
+                key={entry.id}
+                entry={entry}
+                selected={selectedId === entry.id}
+                touchMode={touchMode}
+                onOpenMenu={openMenu}
+                onSelect={toggleSelect}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       <div
         onDragOver={(e) => {
@@ -488,7 +557,7 @@ export function FormationBoard({
       >
         <div className="mb-3 flex items-center justify-between gap-2">
           <h3 className="font-display text-lg font-semibold">
-            Bench ({bench.length})
+            Bench ({benchVisible.length})
           </h3>
           <p className="text-xs text-fc-muted text-right">
             {touchMode
@@ -497,7 +566,7 @@ export function FormationBoard({
           </p>
         </div>
 
-        {bench.length === 0 ? (
+        {benchVisible.length === 0 ? (
           <p className="text-sm text-fc-muted py-4 text-center">
             {touchMode
               ? "Select a starter and tap here to bench them."
@@ -505,7 +574,7 @@ export function FormationBoard({
           </p>
         ) : (
           <div className="flex flex-wrap gap-2">
-            {bench.map((entry) => (
+            {benchVisible.map((entry) => (
               <BenchChip
                 key={entry.id}
                 entry={entry}
@@ -529,7 +598,9 @@ export function FormationBoard({
           onClick={(e) => e.stopPropagation()}
         >
           <div className="border-b border-white/10 px-3 py-2 space-y-1">
-            <p className="truncate text-xs font-semibold">{menu.entry.player.name}</p>
+            <p className="truncate text-xs font-semibold">
+              {parseAllTimePlayer(menu.entry.player.name, menu.entry.player.realTeam).displayName}
+            </p>
             {isBoosted(menu.entry) && (
               <div className="space-y-1">
                 <p className="text-[9px] uppercase tracking-wide text-fc-accent">

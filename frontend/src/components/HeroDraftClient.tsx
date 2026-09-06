@@ -3,8 +3,8 @@
 import { apiPath, apiFetchInit, readApiJson } from "@/lib/api-base";
 import { formatMoney } from "@/lib/utils";
 import { getPublicSocketUrl } from "@/lib/public-env";
-import { getTierVisual } from "@/lib/hero-draft-ui";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { getTierVisual, parseAllTimePlayer, DRAFT_SLOT_LABELS } from "@/lib/hero-draft-ui";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { LoadingPulse } from "@/components/LoadingPulse";
@@ -52,7 +52,13 @@ type DraftPayload = {
   state: DraftState | null;
   users: DraftUser[];
   auctionedPlayer: DraftPlayer | null;
-  mySquad: Array<{ id: string; draftSlotIndex: number | null; purchasePrice: number; player: DraftPlayer }>;
+  mySquad: Array<{
+    id: string;
+    draftSlotIndex: number | null;
+    purchasePrice: number;
+    draftAcquisition?: string | null;
+    player: DraftPlayer;
+  }>;
   me: DraftUser | null;
   pendingRelease: ReleasePrompt | null;
   error?: string;
@@ -95,7 +101,9 @@ export function HeroDraftClient() {
   const [goldenFlash, setGoldenFlash] = useState(false);
   const [feed, setFeed] = useState<string[]>([]);
 
+  const loadSeq = useRef(0);
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
     const res = await fetch(apiPath(`/api/rooms/${code}/hero-draft`), apiFetchInit);
     if (res.status === 401) {
       router.replace("/");
@@ -103,6 +111,7 @@ export function HeroDraftClient() {
     }
     const payload = await readApiJson<DraftPayload>(res);
     if (!res.ok) throw new Error(payload.error ?? "Failed to load draft");
+    if (seq !== loadSeq.current) return payload;
     setData(payload);
     if (payload.state?.currentRoundHighestBid) {
       // Input is in millions — suggest 1M above current highest
@@ -166,6 +175,7 @@ export function HeroDraftClient() {
         load().catch(() => undefined);
       });
       s.on("squadSlot:downgraded", reload);
+      s.on("budget:updated", reload);
       s.on("draft:completed", (p: { next: string }) => {
         if (p.next === "trade_window") router.push(`/room/${code}/trade-window`);
         else router.push(`/room/${code}/draft-recap`);
@@ -262,6 +272,7 @@ export function HeroDraftClient() {
   const releasableSquad = [...data.mySquad]
     .map((sp) => {
       const isUnpaidRoll =
+        sp.draftAcquisition === "random_roll_unpaid" ||
         sp.player.id === releasePrompt?.playerId ||
         (releasePrompt?.unpaidSlotIndex != null &&
           sp.draftSlotIndex === releasePrompt.unpaidSlotIndex);
@@ -327,9 +338,13 @@ export function HeroDraftClient() {
                     className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/30 px-3 py-3"
                   >
                     <div className="min-w-0">
-                      <p className="font-semibold text-white truncate">{sp.player.name}</p>
+                      <p className="font-semibold text-white truncate">
+                        {parseAllTimePlayer(sp.player.name, sp.player.realTeam).displayName}
+                      </p>
                       <p className="text-xs text-fc-muted">
-                        #{(sp.draftSlotIndex ?? 0) + 1} · {sp.player.position} · {sp.player.baseRating}{" "}
+                        {DRAFT_SLOT_LABELS[sp.draftSlotIndex ?? -1] ?? `Slot ${(sp.draftSlotIndex ?? 0) + 1}`}
+                        {" · "}
+                        {sp.player.position}{" "}
                         <span className={`ml-1 rounded px-1.5 py-0.5 ${visual.badge}`}>{visual.label}</span>
                       </p>
                       {sp.isUnpaidRoll ? (
@@ -480,7 +495,9 @@ export function HeroDraftClient() {
                   return (
                     <li key={id} className="flex justify-between text-sm px-2 py-1.5 rounded bg-amber-500/10 text-amber-200">
                       <span>{u?.teamName ?? id.slice(0, 6)}</span>
-                      <span className="text-xs">{id === me?.id ? "your turn" : "waiting"}</span>
+                      <span className="text-xs font-mono">
+                        {u ? formatMoney(u.budget) : ""} · {id === me?.id ? "your turn" : "waiting"}
+                      </span>
                     </li>
                   );
                 })}
@@ -502,7 +519,9 @@ export function HeroDraftClient() {
                       } ${passed ? "opacity-40 line-through" : ""}`}
                     >
                       <span>{u?.teamName ?? id.slice(0, 6)}</span>
-                      <span className="text-fc-muted text-xs">{active ? "in" : "out"}</span>
+                      <span className="text-fc-muted text-xs font-mono">
+                        {u ? formatMoney(u.budget) : ""} {active ? "in" : "out"}
+                      </span>
                     </li>
                   );
                 })}
@@ -523,15 +542,61 @@ export function HeroDraftClient() {
           <div className="rounded-xl border border-white/10 bg-fc-card/40 p-4">
             <h3 className="font-display font-semibold mb-2">Your squad</h3>
             <p className="text-xs text-fc-muted mb-2">{data.mySquad.length} / 18 filled</p>
-            <ul className="space-y-1 max-h-56 overflow-y-auto text-sm">
-              {data.mySquad.map((sp) => (
-                <li key={sp.id} className="flex justify-between gap-2">
-                  <span>
-                    #{(sp.draftSlotIndex ?? 0) + 1} {sp.player.name}
-                  </span>
-                  <span className="text-fc-muted">{sp.player.baseRating}</span>
-                </li>
-              ))}
+            <ul className="space-y-1 max-h-64 overflow-y-auto text-sm">
+              {DRAFT_SLOT_LABELS.map((label, index) => {
+                const occupants = data.mySquad.filter((sp) => sp.draftSlotIndex === index);
+                const sp = occupants[0];
+                const extras = occupants.slice(1);
+                const parsed = sp
+                  ? parseAllTimePlayer(sp.player.name, sp.player.realTeam)
+                  : null;
+                return (
+                  <li key={`slot-${index}`}>
+                    <div className={`flex justify-between gap-2 ${sp ? "" : "opacity-40"}`}>
+                      <span className="min-w-0 truncate">
+                        <span className="inline-block w-[4.75rem] shrink-0 text-[11px] uppercase tracking-wide text-fc-muted">
+                          {label}
+                        </span>
+                        {parsed ? parsed.displayName : "—"}
+                        {parsed?.year != null ? (
+                          <span className="text-fc-muted"> {parsed.year}</span>
+                        ) : null}
+                      </span>
+                      <span className="shrink-0 text-fc-muted">{sp?.player.position ?? ""}</span>
+                    </div>
+                    {extras.map((extra) => {
+                      const extraParsed = parseAllTimePlayer(extra.player.name, extra.player.realTeam);
+                      return (
+                        <div key={extra.id} className="flex justify-between gap-2 pl-[4.75rem] text-amber-200">
+                          <span className="min-w-0 truncate">{extraParsed.displayName}</span>
+                          <span className="shrink-0">{extra.player.position}</span>
+                        </div>
+                      );
+                    })}
+                  </li>
+                );
+              })}
+              {data.mySquad
+                .filter(
+                  (sp) =>
+                    sp.draftSlotIndex == null ||
+                    sp.draftSlotIndex < 0 ||
+                    sp.draftSlotIndex >= DRAFT_SLOT_LABELS.length
+                )
+                .map((sp) => {
+                  const parsed = parseAllTimePlayer(sp.player.name, sp.player.realTeam);
+                  return (
+                    <li key={sp.id} className="flex justify-between gap-2 text-amber-200">
+                      <span className="min-w-0 truncate">
+                        <span className="inline-block w-[4.75rem] shrink-0 text-[11px] uppercase tracking-wide text-fc-muted">
+                          Extra
+                        </span>
+                        {parsed.displayName}
+                      </span>
+                      <span className="shrink-0">{sp.player.position}</span>
+                    </li>
+                  );
+                })}
             </ul>
           </div>
 

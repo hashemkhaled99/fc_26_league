@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import { RoomNav } from "@/components/RoomNav";
+import { formatMoney } from "@/lib/utils";
 
 interface RoomLayoutShellProps {
   code: string;
@@ -67,7 +68,7 @@ export function RoomLayoutShell({
               <p className="font-display font-semibold">{teamName}</p>
               {budget !== undefined && (
                 <p className="text-sm text-fc-green font-mono font-bold">
-                  {(budget / 1000000).toFixed(0)}M
+                  {formatMoney(budget)}
                   <span className="text-fc-muted font-normal ml-1">budget</span>
                 </p>
               )}

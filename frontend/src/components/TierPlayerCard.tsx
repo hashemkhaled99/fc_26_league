@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { getTierVisual } from "@/lib/hero-draft-ui";
+import { getTierVisual, parseAllTimePlayer } from "@/lib/hero-draft-ui";
 
 export type DraftPlayer = {
   id: string;
@@ -11,6 +11,7 @@ export type DraftPlayer = {
   baseRating: number;
   marketValue?: number;
   tier?: string;
+  league?: string | null;
 };
 
 export function TierPlayerCard({
@@ -24,8 +25,8 @@ export function TierPlayerCard({
 }) {
   const tier = player.tier ?? "GOLD";
   const visual = getTierVisual(tier);
-  const ratingSize =
-    size === "lg" ? "text-5xl" : size === "sm" ? "text-xl" : "text-3xl";
+  const { displayName, year, club } = parseAllTimePlayer(player.name, player.realTeam);
+  const subtitle = year ? [String(year), club].filter(Boolean).join(" · ") : club;
 
   return (
     <motion.div
@@ -38,18 +39,22 @@ export function TierPlayerCard({
     >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <span className={`inline-block rounded px-2 py-0.5 text-xs font-bold uppercase tracking-wide ${visual.badge}`}>
-            {visual.label}
-          </span>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className={`inline-block rounded px-2 py-0.5 text-xs font-bold uppercase tracking-wide ${visual.badge}`}>
+              {visual.label}
+            </span>
+            {year != null && (
+              <span className="inline-block rounded px-2 py-0.5 text-xs font-bold tabular-nums bg-white/10 text-white/90">
+                {year}
+              </span>
+            )}
+          </div>
           <p className={`mt-2 font-display font-bold text-white ${size === "lg" ? "text-2xl" : "text-lg"}`}>
-            {player.name}
+            {displayName}
           </p>
-          <p className="text-sm text-white/60">{player.realTeam}</p>
+          <p className="text-sm text-white/60">{subtitle}</p>
         </div>
-        <div className="text-right">
-          <p className={`font-display font-black text-white ${ratingSize}`}>{player.baseRating}</p>
-          <p className="text-xs font-bold text-white/70">{player.position}</p>
-        </div>
+        <p className="text-xs font-bold text-white/70">{player.position}</p>
       </div>
     </motion.div>
   );

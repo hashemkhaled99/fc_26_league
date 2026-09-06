@@ -35,6 +35,31 @@ export function getTierVisual(tier: string): TierVisual {
   }
 }
 
+export function qualityFromRating(rating: number) {
+  if (rating >= 90) return "perfect";
+  if (rating >= 80) return "good";
+  if (rating >= 70) return "med";
+  if (rating >= 60) return "bad";
+  return "really_bad";
+}
+
+export function qualityLabel(quality: string): string {
+  switch (quality) {
+    case "perfect":
+      return "Perfect";
+    case "good":
+      return "Good";
+    case "med":
+      return "Med";
+    case "bad":
+      return "Bad";
+    case "really_bad":
+      return "Really bad";
+    default:
+      return "Med";
+  }
+}
+
 /** Split "Lionel Messi 2009" into name + year for all-time cards. */
 export function parseAllTimePlayer(name: string, realTeam?: string) {
   const match = name.trim().match(/^(.*?)\s+(19\d{2}|20\d{2})$/);
@@ -47,4 +72,26 @@ export function parseAllTimePlayer(name: string, realTeam?: string) {
     club: realTeam ?? "",
   };
 }
+
+/** Hero Draft 18-slot labels (Starting XI 4-3-3 + bench buckets). */
+export const DRAFT_SLOT_LABELS = [
+  "GK",
+  "RB",
+  "CB",
+  "CB",
+  "LB",
+  "CDM",
+  "CM",
+  "CAM",
+  "RW",
+  "ST",
+  "LW",
+  "Bench CB",
+  "Bench FB",
+  "Bench MID",
+  "Bench MID",
+  "Bench ATK",
+  "Bench LW",
+  "Bench RW",
+] as const;
 

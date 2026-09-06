@@ -1,7 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { emitToRoom } from "@/lib/socket-emit";
 import { seedPlayersForRoom } from "@/lib/players/seed";
-import { ICON_CATALOG, iconMarketValue } from "@/lib/icons/pool";
+import {
+  ALL_TIME_CATALOG,
+  allTimeMarketValue,
+  iconMarketValue,
+  tierForAllTimeRating,
+} from "@/lib/icons/pool";
 import { HERO_CATALOG } from "@/lib/icons/heroes";
 import {
   DEFAULT_SLOT_TEMPLATE,
@@ -24,43 +29,76 @@ import {
 import { initBidRound, placeBid, passBid, type BidRoundState } from "./bidding-machine";
 import { pickPlayerForSlot, effectiveDraftMinRating } from "./player-pick";
 import { computeRandomRollDeduction } from "./deductions";
+import { notifyBudgetUpdated } from "@/lib/admin/users";
+import {
+  UNPAID_ROLL_ACQUISITION,
+  PAID_ROLL_ACQUISITION,
+  withHeroDraftLock,
+  lockHeroDraftRoom,
+  tryDebitBudget,
+  creditBudget,
+} from "./budget-ops";
 
 function normalizePos(pos: string) {
   return pos === "CF" ? "ST" : pos;
 }
 
-async function ensureHeroDraftPool(roomId: string) {
-  await seedPlayersForRoom(roomId);
+const legendReadyRooms = new Set<string>();
 
-  const existingIcons = await prisma.player.findMany({
-    where: { roomId, tier: "ICON" },
+async function createPlayersChunked(
+  rows: Array<{
+    roomId: string;
+    name: string;
+    realTeam: string;
+    league: string | null;
+    position: string;
+    baseRating: number;
+    marketValue: number;
+    status: string;
+    tier: PlayerTier;
+    isIcon: boolean;
+    isHero: boolean;
+  }>
+) {
+  const CHUNK = 250;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    await prisma.player.createMany({ data: rows.slice(i, i + CHUNK) });
+  }
+}
+
+export async function ensureHeroDraftPool(roomId: string) {
+  await seedPlayersForRoom(roomId);
+  if (legendReadyRooms.has(roomId)) return;
+
+  const existing = await prisma.player.findMany({
+    where: { roomId },
     select: { name: true },
   });
-  const iconNames = new Set(existingIcons.map((p) => p.name));
-  const iconsToCreate = ICON_CATALOG.filter((i) => !iconNames.has(i.name));
-  if (iconsToCreate.length > 0) {
-    await prisma.player.createMany({
-      data: iconsToCreate.map((i) => ({
-        roomId,
-        name: i.name,
-        realTeam: i.realTeam,
-        league: i.league ?? "All-time",
-        position: normalizePos(i.position),
-        baseRating: i.baseRating,
-        marketValue: iconMarketValue(i.baseRating),
-        status: "available",
-        tier: "ICON" as const,
-        ...flagsFromTier("ICON"),
-      })),
-    });
+  const names = new Set(existing.map((p) => p.name));
+
+  const allTimeMissing = ALL_TIME_CATALOG.filter((p) => !names.has(p.name));
+  if (allTimeMissing.length > 0) {
+    await createPlayersChunked(
+      allTimeMissing.map((p) => {
+        const tier = tierForAllTimeRating(p.baseRating);
+        return {
+          roomId,
+          name: p.name,
+          realTeam: p.realTeam,
+          league: p.league ?? "All-time",
+          position: normalizePos(p.position),
+          baseRating: p.baseRating,
+          marketValue: allTimeMarketValue(p.baseRating),
+          status: "available",
+          tier,
+          ...flagsFromTier(tier),
+        };
+      })
+    );
+    for (const p of allTimeMissing) names.add(p.name);
   }
 
-  const existingHeroes = await prisma.player.findMany({
-    where: { roomId, tier: "HERO" },
-    select: { name: true },
-  });
-  const heroNames = new Set(existingHeroes.map((p) => p.name));
-  const heroesToCreate = HERO_CATALOG.filter((i) => !heroNames.has(i.name));
+  const heroesToCreate = HERO_CATALOG.filter((i) => !names.has(i.name));
   if (heroesToCreate.length > 0) {
     await prisma.player.createMany({
       data: heroesToCreate.map((i) => ({
@@ -77,6 +115,18 @@ async function ensureHeroDraftPool(roomId: string) {
       })),
     });
   }
+
+  // Old default 75 hid med/bad/really-bad all-time players. Open the floor so the pyramid can appear.
+  await prisma.heroDraftSettings.updateMany({
+    where: { roomId, minPlayerRating: 75 },
+    data: { minPlayerRating: 45 },
+  });
+  await prisma.heroDraftState.updateMany({
+    where: { roomId, minPlayerRating: 75 },
+    data: { minPlayerRating: 45 },
+  });
+
+  legendReadyRooms.add(roomId);
 }
 
 function stateToBidRound(state: {
@@ -193,7 +243,7 @@ export async function startHeroDraft(roomCode: string) {
         slotTemplate: DEFAULT_SLOT_TEMPLATE,
         filledSlotIndexes: [],
         tierWeights: weights,
-        minPlayerRating: room.heroDraftSettings?.minPlayerRating ?? 75,
+        minPlayerRating: room.heroDraftSettings?.minPlayerRating ?? 45,
         goldenRoundMinRating:
           room.heroDraftSettings?.goldenRoundMinRating ?? 80,
       },
@@ -229,7 +279,7 @@ export async function beginRound(roomCode: string) {
   const weights = (state.tierWeights as TierWeights) ?? DEFAULT_TIER_WEIGHTS;
   const isGolden = state.goldenRoundIndex === state.currentRound;
   const minRating = effectiveDraftMinRating(
-    state.minPlayerRating ?? 75,
+    state.minPlayerRating ?? 45,
     state.goldenRoundMinRating,
     isGolden
   );
@@ -480,11 +530,30 @@ async function resolveRoundAuction(
   winnerId: string,
   winningBid: number
 ) {
+  const hint = await loadRoomDraft(roomCode);
+  return withHeroDraftLock(hint.id, () =>
+    resolveRoundAuctionLocked(roomCode, winnerId, winningBid)
+  );
+}
+
+async function resolveRoundAuctionLocked(
+  roomCode: string,
+  winnerId: string,
+  winningBid: number
+) {
   const room = await loadRoomDraft(roomCode);
   const state = room.heroDraftState!;
 
   if (state.status === "awaiting_releases") {
     return { ok: true as const, awaitingReleases: true };
+  }
+
+  // Stale recover/pass must not charge a later round with an old winner/price.
+  if (
+    state.currentRoundHighestBidderId !== winnerId ||
+    state.currentRoundHighestBid !== winningBid
+  ) {
+    return { ok: true as const, alreadyResolved: true };
   }
 
   const slotIndex = state.currentSlotIndex;
@@ -513,7 +582,12 @@ async function resolveRoundAuction(
     },
   });
   if (existingHistory) {
-    const filled = [...state.filledSlotIndexes, slotIndex];
+    if (state.currentAuctionedPlayerId !== playerId) {
+      return { ok: true as const, alreadyResolved: true };
+    }
+    const filled = state.filledSlotIndexes.includes(slotIndex)
+      ? state.filledSlotIndexes
+      : [...state.filledSlotIndexes, slotIndex];
     if (state.pendingReleaseUserIds.length > 0) {
       await prisma.heroDraftState.update({
         where: { roomId: room.id },
@@ -560,16 +634,20 @@ async function resolveRoundAuction(
     where: { userId: winnerId, playerId },
   });
   if (!winnerAlreadyOwns) {
-    await prisma.$transaction([
-      prisma.user.update({
-        where: { id: winnerId },
-        data: { budget: { decrement: winningBid } },
-      }),
-      prisma.player.update({
+    await prisma.$transaction(async (tx) => {
+      const owned = await tx.squadPlayer.findFirst({
+        where: { userId: winnerId, playerId },
+      });
+      if (owned) return;
+      const charged = await tryDebitBudget(tx, winnerId, winningBid);
+      if (!charged) {
+        throw new Error("Winner no longer has enough budget for this bid");
+      }
+      await tx.player.update({
         where: { id: playerId },
         data: { status: "owned" },
-      }),
-      prisma.squadPlayer.create({
+      });
+      await tx.squadPlayer.create({
         data: {
           userId: winnerId,
           playerId,
@@ -578,17 +656,9 @@ async function resolveRoundAuction(
           draftSlotIndex: slotIndex,
           draftAcquisition: "auction",
         },
-      }),
-    ]);
+      });
+    });
   }
-
-  await emitToRoom(room.code, "auction:closed", {
-    roundIndex: state.currentRound,
-    winnerId,
-    winningBid,
-    playerId,
-    slotIndex,
-  });
 
   // Random rolls for everyone else
   const losers = room.users.filter((u) => u.id !== winnerId);
@@ -646,7 +716,10 @@ async function resolveRoundAuction(
         deductionAmount: deduction.amount,
         deductionType: deduction.deductionType,
       });
-      if (state.pendingReleaseUserIds.includes(loser.id)) {
+      const unpaid =
+        existingAtSlot.draftAcquisition === UNPAID_ROLL_ACQUISITION ||
+        state.pendingReleaseUserIds.includes(loser.id);
+      if (unpaid) {
         pendingReleases.push(loser.id);
         const freshUser = await prisma.user.findUniqueOrThrow({ where: { id: loser.id } });
         await emitToRoom(room.code, "randomRoll:insufficientFunds", {
@@ -667,7 +740,7 @@ async function resolveRoundAuction(
       slot,
       weights,
       minRating: effectiveDraftMinRating(
-        state.minPlayerRating ?? 75,
+        state.minPlayerRating ?? 45,
         state.goldenRoundMinRating,
         isGolden
       ),
@@ -685,72 +758,52 @@ async function resolveRoundAuction(
     if (idx >= 0) available[idx] = { ...available[idx], status: "owned" };
 
     const freshUser = await prisma.user.findUniqueOrThrow({ where: { id: loser.id } });
-    if (freshUser.budget < deduction.amount) {
-      // Assign player unpaid; mark pending release
-      await prisma.$transaction([
-        prisma.player.update({
-          where: { id: picked.id },
-          data: { status: "owned" },
-        }),
-        prisma.squadPlayer.create({
-          data: {
-            userId: loser.id,
-            playerId: picked.id,
-            isStarting: slot.isStarting,
-            purchasePrice: deduction.amount,
-            draftSlotIndex: slotIndex,
-            draftAcquisition: "random_roll",
-          },
-        }),
-      ]);
-      pendingReleases.push(loser.id);
-      randomRolls.push({
-        userId: loser.id,
-        playerId: picked.id,
-        tier: picked.tier,
-        rating: picked.baseRating,
-        lastBidAmount: deduction.lastBidAmount,
-        deductionAmount: deduction.amount,
-        deductionType: deduction.deductionType,
+    let unpaid = freshUser.budget < deduction.amount;
+    await prisma.$transaction(async (tx) => {
+      const already = await tx.squadPlayer.findFirst({
+        where: { userId: loser.id, draftSlotIndex: slotIndex },
       });
+      if (already) {
+        unpaid = already.draftAcquisition === UNPAID_ROLL_ACQUISITION;
+        return;
+      }
+      const charged = await tryDebitBudget(tx, loser.id, deduction.amount);
+      unpaid = !charged;
+      await tx.player.update({
+        where: { id: picked.id },
+        data: { status: "owned" },
+      });
+      await tx.squadPlayer.create({
+        data: {
+          userId: loser.id,
+          playerId: picked.id,
+          isStarting: slot.isStarting,
+          purchasePrice: deduction.amount,
+          draftSlotIndex: slotIndex,
+          draftAcquisition: unpaid ? UNPAID_ROLL_ACQUISITION : PAID_ROLL_ACQUISITION,
+        },
+      });
+    });
+    if (unpaid) {
+      pendingReleases.push(loser.id);
+      const after = await prisma.user.findUniqueOrThrow({ where: { id: loser.id } });
       await emitToRoom(room.code, "randomRoll:insufficientFunds", {
         userId: loser.id,
         requiredAmount: deduction.amount,
-        budget: freshUser.budget,
+        budget: after.budget,
         playerId: picked.id,
         roundIndex: state.currentRound,
       });
-    } else {
-      await prisma.$transaction([
-        prisma.user.update({
-          where: { id: loser.id },
-          data: { budget: { decrement: deduction.amount } },
-        }),
-        prisma.player.update({
-          where: { id: picked.id },
-          data: { status: "owned" },
-        }),
-        prisma.squadPlayer.create({
-          data: {
-            userId: loser.id,
-            playerId: picked.id,
-            isStarting: slot.isStarting,
-            purchasePrice: deduction.amount,
-            draftSlotIndex: slotIndex,
-            draftAcquisition: "random_roll",
-          },
-        }),
-      ]);
-      randomRolls.push({
-        userId: loser.id,
-        playerId: picked.id,
-        tier: picked.tier,
-        rating: picked.baseRating,
-        lastBidAmount: deduction.lastBidAmount,
-        deductionAmount: deduction.amount,
-        deductionType: deduction.deductionType,
-      });
     }
+    randomRolls.push({
+      userId: loser.id,
+      playerId: picked.id,
+      tier: picked.tier,
+      rating: picked.baseRating,
+      lastBidAmount: deduction.lastBidAmount,
+      deductionAmount: deduction.amount,
+      deductionType: deduction.deductionType,
+    });
 
     await emitToRoom(room.code, "randomRoll:revealed", {
       userId: loser.id,
@@ -778,9 +831,21 @@ async function resolveRoundAuction(
       passOrder,
       randomRolls,
     },
+  }).catch((err: { code?: string }) => {
+    if (err?.code !== "P2002") throw err;
   });
 
   const filled = [...state.filledSlotIndexes, slotIndex];
+
+  await emitToRoom(room.code, "auction:closed", {
+    roundIndex: state.currentRound,
+    winnerId,
+    winningBid,
+    playerId,
+    slotIndex,
+  });
+  await emitToRoom(room.code, "squad:updated", { reason: "hero_draft_round" });
+  await notifyBudgetUpdated(room.code, { reason: "hero_draft_round" });
 
   if (pendingReleases.length > 0) {
     await prisma.heroDraftState.update({
@@ -800,8 +865,32 @@ async function resolveRoundAuction(
 }
 
 async function finishRoundAdvance(roomCode: string, filledSlotIndexes: number[]) {
+  const hint = await loadRoomDraft(roomCode);
+  return withHeroDraftLock(hint.id, () =>
+    finishRoundAdvanceLocked(roomCode, filledSlotIndexes)
+  );
+}
+
+async function finishRoundAdvanceLocked(roomCode: string, filledSlotIndexes: number[]) {
   const room = await loadRoomDraft(roomCode);
   const state = room.heroDraftState!;
+  const filled = [...new Set(filledSlotIndexes)];
+  const alreadyFilled =
+    filled.every((i) => state.filledSlotIndexes.includes(i)) &&
+    state.filledSlotIndexes.length >= filled.length;
+
+  if (alreadyFilled) {
+    const drainReleases =
+      state.status === "awaiting_releases" && state.pendingReleaseUserIds.length === 0;
+    if (!drainReleases) {
+      if (state.status === "completed" || state.status === "trade_window") return;
+      if (state.currentAuctionedPlayerId) return;
+      if (filled.length >= TOTAL_DRAFT_SLOTS) return completeDraft(room.code);
+      if (state.status === "in_progress") return beginRound(room.code);
+      return;
+    }
+  }
+
   const nextPointer = advanceTurnPointer(state.turnQueuePointer, state.turnQueue.length);
   const nextRound = state.currentRound + 1;
 
@@ -811,12 +900,12 @@ async function finishRoundAdvance(roomCode: string, filledSlotIndexes: number[])
     nextRound,
   });
 
-  if (filledSlotIndexes.length >= TOTAL_DRAFT_SLOTS) {
+  if (filled.length >= TOTAL_DRAFT_SLOTS) {
     await prisma.heroDraftState.update({
       where: { roomId: room.id },
       data: {
         status: "in_progress",
-        filledSlotIndexes,
+        filledSlotIndexes: filled,
         turnQueuePointer: nextPointer,
         currentRound: nextRound,
         currentSlotIndex: null,
@@ -839,7 +928,7 @@ async function finishRoundAdvance(roomCode: string, filledSlotIndexes: number[])
     where: { roomId: room.id },
     data: {
       status: "in_progress",
-      filledSlotIndexes,
+      filledSlotIndexes: filled,
       turnQueuePointer: nextPointer,
       currentRound: nextRound,
       currentSlotIndex: null,
@@ -860,6 +949,17 @@ async function finishRoundAdvance(roomCode: string, filledSlotIndexes: number[])
 }
 
 export async function forceReleasePlayer(
+  roomCode: string,
+  userId: string,
+  releaseSquadPlayerId: string
+) {
+  const hint = await loadRoomDraft(roomCode);
+  return withHeroDraftLock(hint.id, () =>
+    forceReleasePlayerLocked(roomCode, userId, releaseSquadPlayerId)
+  );
+}
+
+async function forceReleasePlayerLocked(
   roomCode: string,
   userId: string,
   releaseSquadPlayerId: string
@@ -895,6 +995,9 @@ export async function forceReleasePlayer(
   if (squadEntry.draftSlotIndex === history.slotIndex) {
     throw new Error("Release an earlier player, not this round's roll");
   }
+  if (squadEntry.draftAcquisition === UNPAID_ROLL_ACQUISITION) {
+    throw new Error("Release an earlier player, not this round's roll");
+  }
 
   const refund = squadEntry.purchasePrice;
   if (refund <= 0) {
@@ -923,16 +1026,27 @@ export async function forceReleasePlayer(
   });
   if (!downgrade) throw new Error("No Gold downgrade available for vacated slot");
 
-  await prisma.$transaction(async (tx) => {
+  const outcome = await prisma.$transaction(async (tx) => {
+    await lockHeroDraftRoom(tx, room.id);
+
+    const liveState = await tx.heroDraftState.findUniqueOrThrow({
+      where: { roomId: room.id },
+    });
+    if (!liveState.pendingReleaseUserIds.includes(userId)) {
+      throw new Error("You do not owe a release");
+    }
+
+    const stillThere = await tx.squadPlayer.findFirst({
+      where: { id: squadEntry.id, userId },
+    });
+    if (!stillThere) throw new Error("Squad player not found");
+
     await tx.squadPlayer.delete({ where: { id: squadEntry.id } });
     await tx.player.update({
       where: { id: squadEntry.playerId },
       data: { status: "available" },
     });
-    await tx.user.update({
-      where: { id: userId },
-      data: { budget: { increment: refund } },
-    });
+    await creditBudget(tx, userId, refund);
     await tx.player.update({
       where: { id: downgrade.id },
       data: { status: "owned" },
@@ -951,13 +1065,78 @@ export async function forceReleasePlayer(
       data: {
         roomId: room.id,
         userId,
-        roundIndex: state.currentRound,
+        roundIndex: liveState.currentRound,
         releasedPlayerId: squadEntry.playerId,
         refundAmount: refund,
         downgradeSlotIndex: vacatedSlot,
         downgradePlayerId: downgrade.id,
       },
     });
+
+    const unpaidSlot = await tx.squadPlayer.findFirst({
+      where: {
+        userId,
+        playerId: myRoll.playerId,
+        draftAcquisition: UNPAID_ROLL_ACQUISITION,
+      },
+    });
+
+    const userAfter = await tx.user.findUniqueOrThrow({ where: { id: userId } });
+    if (!unpaidSlot) {
+      const remaining = liveState.pendingReleaseUserIds.filter((id) => id !== userId);
+      await tx.heroDraftState.update({
+        where: { roomId: room.id },
+        data: { status: "awaiting_releases", pendingReleaseUserIds: remaining },
+      });
+      return {
+        stillOwes: false as const,
+        waitingOthers: remaining.length > 0,
+        budget: userAfter.budget,
+        remaining,
+      };
+    }
+
+    if (userAfter.budget < myRoll.deductionAmount) {
+      await tx.heroDraftState.update({
+        where: { roomId: room.id },
+        data: { status: "awaiting_releases" },
+      });
+      return {
+        stillOwes: true as const,
+        waitingOthers: true,
+        budget: userAfter.budget,
+        remaining: liveState.pendingReleaseUserIds,
+      };
+    }
+
+    const charged = await tryDebitBudget(tx, userId, myRoll.deductionAmount);
+    if (!charged) {
+      return {
+        stillOwes: true as const,
+        waitingOthers: true,
+        budget: userAfter.budget,
+        remaining: liveState.pendingReleaseUserIds,
+      };
+    }
+    await tx.squadPlayer.update({
+      where: { id: unpaidSlot.id },
+      data: { draftAcquisition: PAID_ROLL_ACQUISITION },
+    });
+    const remaining = liveState.pendingReleaseUserIds.filter((id) => id !== userId);
+    await tx.heroDraftState.update({
+      where: { roomId: room.id },
+      data: {
+        status: remaining.length > 0 ? "awaiting_releases" : liveState.status,
+        pendingReleaseUserIds: remaining,
+      },
+    });
+    const paidUser = await tx.user.findUniqueOrThrow({ where: { id: userId } });
+    return {
+      stillOwes: false as const,
+      waitingOthers: remaining.length > 0,
+      budget: paidUser.budget,
+      remaining,
+    };
   });
 
   await emitToRoom(room.code, "squadSlot:downgraded", {
@@ -967,34 +1146,21 @@ export async function forceReleasePlayer(
     downgradePlayerId: downgrade.id,
     refundAmount: refund,
   });
+  await emitToRoom(room.code, "squad:updated", { userId });
+  await notifyBudgetUpdated(room.code, { userId, budget: outcome.budget, reason: "hero_draft_release" });
 
-  const userAfter = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
-  if (userAfter.budget < myRoll.deductionAmount) {
-    await prisma.heroDraftState.update({
-      where: { roomId: room.id },
-      data: { status: "awaiting_releases" },
-    });
+  if (outcome.stillOwes) {
     await emitToRoom(room.code, "randomRoll:insufficientFunds", {
       userId,
       requiredAmount: myRoll.deductionAmount,
-      budget: userAfter.budget,
+      budget: outcome.budget,
       playerId: myRoll.playerId,
       roundIndex: state.currentRound,
     });
     return { stillOwes: true as const };
   }
 
-  await prisma.user.update({
-    where: { id: userId },
-    data: { budget: { decrement: myRoll.deductionAmount } },
-  });
-
-  const remaining = state.pendingReleaseUserIds.filter((id) => id !== userId);
-  if (remaining.length > 0) {
-    await prisma.heroDraftState.update({
-      where: { roomId: room.id },
-      data: { status: "awaiting_releases", pendingReleaseUserIds: remaining },
-    });
+  if (outcome.waitingOthers) {
     return { stillOwes: false as const, waitingOthers: true as const };
   }
 

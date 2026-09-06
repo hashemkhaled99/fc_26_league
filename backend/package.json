@@ -13,7 +13,8 @@
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
-    "check:lib": "node scripts/check-lib.mjs"
+    "check:lib": "node scripts/check-lib.mjs",
+    "players:alltime": "node scripts/generate-all-time-players.mjs"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

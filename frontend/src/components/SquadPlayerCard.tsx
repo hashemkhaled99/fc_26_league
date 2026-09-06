@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import { formatMoney } from "@/lib/utils";
+import { parseAllTimePlayer } from "@/lib/hero-draft-ui";
 import {
   formatBoostedStats,
   parseBoostedStats,
@@ -91,6 +92,7 @@ export function SquadPlayerCard({
   const isBoosted =
     player.boostedRating != null && player.boostedRating > player.baseRating;
   const boostStats = parseBoostedStats(player.boostedStats);
+  const { displayName, year, club } = parseAllTimePlayer(player.name, player.realTeam);
 
   return (
     <motion.div
@@ -98,41 +100,53 @@ export function SquadPlayerCard({
       transition={{ duration: 0.2 }}
       className={`fc-card fc-card-hover fc-shine overflow-hidden ${entry.isStarting ? "border-fc-green/40 shadow-glow-green" : ""}`}
     >
-      <div className={`relative h-20 bg-gradient-to-br ${gradient} p-2`}>
-        <div className="absolute top-1.5 left-2 font-display text-xl font-bold text-white drop-shadow">
-          {rating}
-        </div>
-        {isBoosted && (
-          <div className="absolute top-1.5 left-12 text-[9px] font-bold uppercase bg-fc-accent/90 text-fc-navy px-1.5 py-0.5 rounded">
-            +{player.boostedRating! - player.baseRating} boost
+      <div className={`relative h-24 bg-gradient-to-br ${gradient} p-2`}>
+        <div className="flex items-start justify-between gap-1">
+          <div className="min-w-0">
+            <div className="font-display text-xl font-bold text-white drop-shadow leading-none">
+              {rating}
+            </div>
+            {isBoosted && (
+              <div className="mt-1 inline-block text-[9px] font-bold uppercase bg-fc-accent/90 text-fc-navy px-1.5 py-0.5 rounded">
+                +{player.boostedRating! - player.baseRating} boost
+              </div>
+            )}
           </div>
-        )}
-        {player.isIcon && (
-          <div className="absolute bottom-1.5 right-2 text-[9px] font-bold uppercase bg-fc-gold text-fc-navy px-1.5 py-0.5 rounded">
-            Icon
+          <div className="flex flex-col items-end gap-0.5 shrink-0">
+            <div className="text-[10px] font-bold text-white/80 bg-black/30 px-1.5 py-0.5 rounded">
+              {player.position}
+            </div>
+            {player.isIcon && (
+              <div className="text-[9px] font-bold uppercase bg-violet-400 text-fc-navy px-1.5 py-0.5 rounded">
+                {year ?? "All-time"}
+              </div>
+            )}
+            {player.isHero && (
+              <div className="text-[9px] font-bold uppercase bg-fc-accent text-fc-navy px-1.5 py-0.5 rounded">
+                Hero
+              </div>
+            )}
           </div>
-        )}
-        {player.isHero && (
-          <div className="absolute bottom-1.5 right-2 text-[9px] font-bold uppercase bg-fc-accent text-fc-navy px-1.5 py-0.5 rounded">
-            Hero
-          </div>
-        )}
-        {entry.isLoanedIn && (
-          <div className="absolute bottom-1.5 left-2 text-[9px] font-bold uppercase bg-sky-500/90 text-white px-1.5 py-0.5 rounded">
-            On loan
-          </div>
-        )}
-        {entry.isLoanedOut && (
-          <div className="absolute bottom-1.5 left-2 text-[9px] font-bold uppercase bg-orange-500/90 text-white px-1.5 py-0.5 rounded">
-            Loaned out
-          </div>
-        )}
-        <div className="absolute top-1.5 right-2 text-[10px] font-bold text-white/80 bg-black/30 px-1.5 py-0.5 rounded">
-          {player.position}
         </div>
         <div className="absolute bottom-1.5 left-2 right-2">
-          <p className="font-display font-bold text-white text-sm truncate">{player.name}</p>
-          <p className="text-[10px] text-white/70 truncate">{player.realTeam}</p>
+          {(entry.isLoanedIn || entry.isLoanedOut) && (
+            <div className="mb-0.5">
+              {entry.isLoanedIn && (
+                <span className="text-[9px] font-bold uppercase bg-sky-500/90 text-white px-1.5 py-0.5 rounded">
+                  On loan
+                </span>
+              )}
+              {entry.isLoanedOut && (
+                <span className="text-[9px] font-bold uppercase bg-orange-500/90 text-white px-1.5 py-0.5 rounded">
+                  Loaned out
+                </span>
+              )}
+            </div>
+          )}
+          <p className="font-display font-bold text-white text-sm truncate">{displayName}</p>
+          <p className="text-[10px] text-white/70 truncate">
+            {year ? `${year} · ${club}` : club}
+          </p>
         </div>
       </div>
 

@@ -35,13 +35,13 @@ const AWARDS: Array<{
     key: "luckiest",
     title: "Luckiest",
     emoji: "🍀",
-    format: (v, name) => `${name} — avg ${(v as { avgRating: number }).avgRating.toFixed(1)} OVR`,
+    format: (v, name) => `${name}`,
   },
   {
     key: "unluckiest",
     title: "Unluckiest",
     emoji: "💀",
-    format: (v, name) => `${name} — avg ${(v as { avgRating: number }).avgRating.toFixed(1)} OVR`,
+    format: (v, name) => `${name}`,
   },
   {
     key: "auctionKing",

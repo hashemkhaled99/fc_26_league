@@ -25,6 +25,8 @@ import {
   computeRandomRollDeduction,
   computeDraftRecap,
 } from "@/lib/hero-draft/deductions";
+import { withHeroDraftLock } from "@/lib/hero-draft/budget-ops";
+import { formatMoney } from "@/lib/utils";
 
 describe("PlayerTier helpers", () => {
   it("maps flags from tier", () => {
@@ -149,6 +151,18 @@ describe("Deductions & recap", () => {
     expect(d.amount).toBe(25_000_000);
   });
 
+  it("keeps half-million deductions exact (header must not round them)", () => {
+    const d = computeRandomRollDeduction({
+      lastBidAmount: null,
+      winningBid: 15_000_000,
+      passiveDeductionRatio: 0.5,
+    });
+    expect(d.amount).toBe(7_500_000);
+    expect(formatMoney(d.amount)).toBe("7.5M");
+    expect(formatMoney(492_500_000)).toBe("492.5M");
+    expect((492_500_000 / 1_000_000).toFixed(0)).toBe("493");
+  });
+
   it("computes draft recap awards", () => {
     const recap = computeDraftRecap([
       {
@@ -213,5 +227,25 @@ describe("Room mode create payload", () => {
       teamName: "FC Hero",
       mode: "HERO_DRAFT",
     }).mode).toBe("HERO_DRAFT");
+  });
+});
+
+describe("Hero Draft room lock", () => {
+  it("serializes work for the same room and allows nested re-entry", async () => {
+    const order: string[] = [];
+    await Promise.all([
+      withHeroDraftLock("room-a", async () => {
+        order.push("a-start");
+        await withHeroDraftLock("room-a", async () => {
+          order.push("a-nested");
+        });
+        await new Promise((r) => setTimeout(r, 20));
+        order.push("a-end");
+      }),
+      withHeroDraftLock("room-a", async () => {
+        order.push("a-second");
+      }),
+    ]);
+    expect(order).toEqual(["a-start", "a-nested", "a-end", "a-second"]);
   });
 });

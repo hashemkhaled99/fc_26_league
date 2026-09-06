@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { requireRoomAdmin } from "@/lib/admin/auth";
 import {
   startHeroDraft,
+  ensureHeroDraftPool,
   heroDraftPlaceBid,
   heroDraftPass,
   forceReleasePlayer,
@@ -44,6 +45,10 @@ export async function GET(_req: Request, { params }: Ctx) {
     const auth = await requireDraftMember(params.code);
     if (!auth.ok) return auth.response;
     const { room, session } = auth;
+
+    if (room.heroDraftState && room.heroDraftState.status !== "not_started") {
+      await ensureHeroDraftPool(room.id);
+    }
 
     let auctionedPlayer = null;
     if (room.heroDraftState?.currentAuctionedPlayerId) {
