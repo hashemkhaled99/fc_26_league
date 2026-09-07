@@ -13,6 +13,7 @@ import {
   openTradeWindow,
   closeTradeWindow,
   completeDraft,
+  loadPendingReleaseRoll,
 } from "@/lib/hero-draft/engine";
 import { computeDraftRecap, type RoundHistoryInput } from "@/lib/hero-draft/deductions";
 import { validateTierWeights } from "@/lib/hero-draft/tiers";
@@ -72,23 +73,13 @@ export async function GET(_req: Request, { params }: Ctx) {
     } | null = null;
 
     if (st && st.pendingReleaseUserIds.includes(session.userId!)) {
-      const history = await prisma.draftRoundHistory.findUnique({
-        where: {
-          roomId_roundIndex: { roomId: room.id, roundIndex: st.currentRound },
-        },
-      });
-      const rolls = (history?.randomRolls ?? []) as Array<{
-        userId: string;
-        playerId: string;
-        deductionAmount: number;
-      }>;
-      const myRoll = rolls.find((r) => r.userId === session.userId);
+      const roll = await loadPendingReleaseRoll(room.id, session.userId!, st.currentRound);
       const meUser = room.users.find((u) => u.id === session.userId);
       pendingRelease = {
-        requiredAmount: myRoll?.deductionAmount ?? 0,
+        requiredAmount: roll?.deductionAmount ?? 0,
         budget: meUser?.budget ?? 0,
-        playerId: myRoll?.playerId ?? "",
-        unpaidSlotIndex: history?.slotIndex ?? st.currentSlotIndex,
+        playerId: roll?.playerId ?? "",
+        unpaidSlotIndex: roll?.slotIndex ?? st.currentSlotIndex,
       };
     }
 
