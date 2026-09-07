@@ -379,6 +379,15 @@ export function HeroDraftClient() {
               })}
             </ul>
             {error && <p className="text-sm text-red-400">{error}</p>}
+            {me?.isAdmin && (
+              <button
+                className="fc-btn-secondary w-full text-sm"
+                disabled={acting}
+                onClick={() => act({ action: "force_advance" })}
+              >
+                {acting ? "Working…" : "Admin: force skip releases"}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -405,13 +414,24 @@ export function HeroDraftClient() {
           </div>
 
           {awaitingReleases && (
-            <div className="rounded-xl border border-amber-400/40 bg-amber-500/10 p-4">
-              <p className="font-display font-bold text-amber-200">Waiting for a budget release</p>
-              <p className="text-sm text-fc-muted mt-1">
-                {iOweRelease
-                  ? "You cannot afford this round's roll. Choose a squad player above to downgrade to Gold and recover budget."
-                  : `${waitingNames || "A manager"} must release a squad player (downgrade to Gold) before the draft can continue.`}
-              </p>
+            <div className="rounded-xl border border-amber-400/40 bg-amber-500/10 p-4 space-y-3">
+              <div>
+                <p className="font-display font-bold text-amber-200">Waiting for a budget release</p>
+                <p className="text-sm text-fc-muted mt-1">
+                  {iOweRelease
+                    ? "You cannot afford this round's roll. Choose a squad player above to downgrade to Gold and recover budget."
+                    : `${waitingNames || "A manager"} must release a squad player (downgrade to Gold) before the draft can continue.`}
+                </p>
+              </div>
+              {me?.isAdmin && (
+                <button
+                  className="fc-btn-secondary text-sm"
+                  disabled={acting}
+                  onClick={() => act({ action: "force_advance" })}
+                >
+                  {acting ? "Working…" : "Admin: force skip releases"}
+                </button>
+              )}
             </div>
           )}
 
@@ -612,13 +632,13 @@ export function HeroDraftClient() {
             </ul>
           </div>
 
-          {me?.isAdmin && !awaitingReleases && (
+          {me?.isAdmin && (
             <button
               className="fc-btn-secondary w-full text-sm"
               disabled={acting}
               onClick={() => act({ action: "force_advance" })}
             >
-              Force advance turn
+              {awaitingReleases ? "Admin: force skip releases" : "Force advance turn"}
             </button>
           )}
         </div>

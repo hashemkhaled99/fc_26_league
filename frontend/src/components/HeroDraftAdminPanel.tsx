@@ -247,7 +247,7 @@ export function HeroDraftAdminPanel({
         <div className="flex flex-wrap gap-2">
           {phase === "hero_draft" && (
             <button className="fc-btn-secondary text-sm" disabled={busy} onClick={() => action("force_advance")}>
-              Force advance turn
+              Force advance / skip stuck releases
             </button>
           )}
           {(phase === "hero_draft" || phase === "draft_recap") && (

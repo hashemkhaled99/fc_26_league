@@ -1421,23 +1421,44 @@ export async function processExpiredTradeWindows() {
   }
 }
 
-/** Admin force-advance: auto-pass current turn user (or skip stuck round). */
+/** Admin force-advance: skip stuck releases, auto-pass current turn, or resolve stuck round. */
 export async function forceAdvanceRound(roomCode: string) {
+  const hint = await loadRoomDraft(roomCode);
+  return withHeroDraftLock(hint.id, () => forceAdvanceRoundLocked(roomCode));
+}
+
+async function forceAdvanceRoundLocked(roomCode: string) {
   const room = await loadRoomDraft(roomCode);
   const state = room.heroDraftState!;
 
-  if (state.status === "awaiting_releases" && state.pendingReleaseUserIds.length === 0) {
-    return finishRoundAdvance(roomCode, state.filledSlotIndexes);
-  }
-
   if (state.status === "awaiting_releases" || state.pendingReleaseUserIds.length > 0) {
-    const names = room.users
-      .filter((u) => state.pendingReleaseUserIds.includes(u.id))
-      .map((u) => u.displayName)
-      .join(", ");
-    throw new Error(
-      `Waiting for ${names || "a manager"} to release a squad player and recover budget. The draft cannot advance until they pick someone to downgrade to Gold.`
-    );
+    // Escape hatch when release flow is stuck: forgive unpaid roll debts and continue.
+    // Managers keep the rolled players without paying the outstanding deduction.
+    const unpaid = await prisma.squadPlayer.findMany({
+      where: {
+        draftAcquisition: UNPAID_ROLL_ACQUISITION,
+        user: { roomId: room.id },
+      },
+      select: { id: true },
+    });
+    if (unpaid.length > 0) {
+      await prisma.squadPlayer.updateMany({
+        where: { id: { in: unpaid.map((u) => u.id) } },
+        data: { draftAcquisition: PAID_ROLL_ACQUISITION },
+      });
+    }
+    await prisma.heroDraftState.update({
+      where: { roomId: room.id },
+      data: {
+        status: "awaiting_releases",
+        pendingReleaseUserIds: [],
+        currentRoundTurnUserId: null,
+        currentRoundTurnExpiresAt: null,
+      },
+    });
+    await emitToRoom(room.code, "squad:updated", { reason: "admin_skip_releases" });
+    await notifyBudgetUpdated(room.code, { reason: "admin_skip_releases" });
+    return finishRoundAdvance(roomCode, state.filledSlotIndexes);
   }
 
   if (state.currentRoundTurnUserId) {
