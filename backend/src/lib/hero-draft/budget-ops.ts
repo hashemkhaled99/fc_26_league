@@ -34,7 +34,9 @@ export function withHeroDraftLock<T>(roomId: string, fn: () => Promise<T>): Prom
 
 export async function lockHeroDraftRoom(tx: Tx, roomId: string) {
   const key = advisoryKey(roomId);
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(884721, ${key})`;
+  // Two-key advisory locks are (int, int). Prisma binds JS numbers as bigint,
+  // which would call a non-existent (int, bigint) overload.
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(884721::int, ${key}::int)`;
 }
 
 /** Debit only if the user still has enough — never go negative. */
