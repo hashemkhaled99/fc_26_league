@@ -261,7 +261,10 @@ export async function startHeroDraft(roomCode: string) {
 
 export async function beginRound(roomCode: string) {
   const room = await loadRoomDraft(roomCode);
-  await ensureHeroDraftPool(room.id);
+  // Pool seeding is done at draft start; avoid blocking every round (esp. releases).
+  if (!legendReadyRooms.has(room.id)) {
+    await ensureHeroDraftPool(room.id);
+  }
   const state = room.heroDraftState!;
   if (state.status !== "in_progress") {
     throw new Error("Draft is not in progress");
@@ -1123,10 +1126,12 @@ async function forceReleasePlayerLocked(
       data: { draftAcquisition: PAID_ROLL_ACQUISITION },
     });
     const remaining = liveState.pendingReleaseUserIds.filter((id) => id !== userId);
+    // Keep awaiting_releases + empty pending so the watcher can begin the next round
+    // without blocking this Release HTTP request on pool seeding.
     await tx.heroDraftState.update({
       where: { roomId: room.id },
       data: {
-        status: remaining.length > 0 ? "awaiting_releases" : liveState.status,
+        status: "awaiting_releases",
         pendingReleaseUserIds: remaining,
       },
     });
@@ -1164,7 +1169,12 @@ async function forceReleasePlayerLocked(
     return { stillOwes: false as const, waitingOthers: true as const };
   }
 
-  await finishRoundAdvance(room.code, state.filledSlotIndexes);
+  // Do not await beginRound / pool ensure here — that can hang the Release button
+  // for a long time. pendingReleaseUserIds is empty and status stays
+  // awaiting_releases so the 2s watcher advances the round.
+  void finishRoundAdvance(room.code, state.filledSlotIndexes).catch((err) => {
+    console.error("Hero draft post-release advance failed:", err);
+  });
   return { stillOwes: false as const, waitingOthers: false as const };
 }
 

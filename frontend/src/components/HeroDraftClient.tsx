@@ -1,6 +1,6 @@
 "use client";
 
-import { apiPath, apiFetchInit, readApiJson } from "@/lib/api-base";
+import { apiPath, apiFetchInit, apiFetch, readApiJson } from "@/lib/api-base";
 import { formatMoney } from "@/lib/utils";
 import { getPublicSocketUrl } from "@/lib/public-env";
 import { getTierVisual, parseAllTimePlayer, DRAFT_SLOT_LABELS } from "@/lib/hero-draft-ui";
@@ -98,6 +98,7 @@ export function HeroDraftClient() {
   const [error, setError] = useState("");
   const [bidAmount, setBidAmount] = useState("");
   const [acting, setActing] = useState(false);
+  const [releasingId, setReleasingId] = useState<string | null>(null);
   const [goldenFlash, setGoldenFlash] = useState(false);
   const [feed, setFeed] = useState<string[]>([]);
 
@@ -194,16 +195,22 @@ export function HeroDraftClient() {
     return m;
   }, [data?.users]);
 
-  async function act(body: Record<string, unknown>) {
+  async function act(body: Record<string, unknown>, opts?: { squadPlayerId?: string }) {
     setActing(true);
+    if (opts?.squadPlayerId) setReleasingId(opts.squadPlayerId);
     setError("");
     try {
-      const res = await fetch(apiPath(`/api/rooms/${code}/hero-draft`), {
-        ...apiFetchInit,
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      // Release can touch budget + pool; use a timeout so the UI never sticks on "…"
+      const timeoutMs = body.action === "release" ? 45_000 : 20_000;
+      const res = await apiFetch(
+        `/api/rooms/${code}/hero-draft`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        },
+        timeoutMs
+      );
       const json = await readApiJson<{ error?: string }>(res);
       if (!res.ok) throw new Error(json.error ?? "Action failed");
       await load();
@@ -211,6 +218,7 @@ export function HeroDraftClient() {
       setError(e instanceof Error ? e.message : "Action failed");
     } finally {
       setActing(false);
+      setReleasingId(null);
     }
   }
 
@@ -271,11 +279,12 @@ export function HeroDraftClient() {
     .join(", ");
   const releasableSquad = [...data.mySquad]
     .map((sp) => {
-      const isUnpaidRoll =
-        sp.draftAcquisition === "random_roll_unpaid" ||
-        sp.player.id === releasePrompt?.playerId ||
-        (releasePrompt?.unpaidSlotIndex != null &&
-          sp.draftSlotIndex === releasePrompt.unpaidSlotIndex);
+      // Only block THIS round's unpaid roll (by player id, else current slot).
+      const isUnpaidRoll = releasePrompt?.playerId
+        ? sp.player.id === releasePrompt.playerId
+        : releasePrompt?.unpaidSlotIndex != null
+          ? sp.draftSlotIndex === releasePrompt.unpaidSlotIndex
+          : sp.draftAcquisition === "random_roll_unpaid";
       const noRefund = sp.purchasePrice <= 0;
       return { ...sp, isUnpaidRoll, noRefund, canRelease: !isUnpaidRoll && !noRefund };
     })
@@ -358,9 +367,14 @@ export function HeroDraftClient() {
                     <button
                       className="shrink-0 text-xs font-bold text-red-200 border border-red-400/50 rounded-lg px-3 py-2 disabled:opacity-40"
                       disabled={acting || !sp.canRelease}
-                      onClick={() => act({ action: "release", squadPlayerId: sp.id })}
+                      onClick={() =>
+                        act(
+                          { action: "release", squadPlayerId: sp.id },
+                          { squadPlayerId: sp.id }
+                        )
+                      }
                     >
-                      {acting ? "…" : "Release"}
+                      {releasingId === sp.id ? "…" : "Release"}
                     </button>
                   </li>
                 );
