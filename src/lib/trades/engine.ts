@@ -79,23 +79,39 @@ export async function validateTrade(params: {
     }
   }
 
-  const fromCount = await getEffectiveSquadCount(fromUserId);
-  const toCount = await getEffectiveSquadCount(toUserId);
-  const fromAfter = fromCount - offeredPlayerIds.length + requestedPlayerIds.length;
-  const toAfter = toCount - requestedPlayerIds.length + offeredPlayerIds.length;
-
-  if (fromAfter > SQUAD_LIMIT) {
-    return { ok: false, reason: `Your squad would exceed ${SQUAD_LIMIT} players` };
+  const fromUser = await prisma.user.findUnique({
+    where: { id: fromUserId },
+    select: {
+      budget: true,
+      room: { select: { phase: true } },
+    },
+  });
+  if (!fromUser) {
+    return { ok: false, reason: "User not found" };
   }
-  if (toAfter > SQUAD_LIMIT) {
-    return { ok: false, reason: `Their squad would exceed ${SQUAD_LIMIT} players` };
+
+  // Draft trade window: no squad size cap so uneven trades can complete
+  const skipSquadLimit = fromUser.room.phase === "trade_window";
+
+  if (!skipSquadLimit) {
+    const fromCount = await getEffectiveSquadCount(fromUserId);
+    const toCount = await getEffectiveSquadCount(toUserId);
+    const fromAfter = fromCount - offeredPlayerIds.length + requestedPlayerIds.length;
+    const toAfter = toCount - requestedPlayerIds.length + offeredPlayerIds.length;
+
+    if (fromAfter > SQUAD_LIMIT) {
+      return { ok: false, reason: `Your squad would exceed ${SQUAD_LIMIT} players` };
+    }
+    if (toAfter > SQUAD_LIMIT) {
+      return { ok: false, reason: `Their squad would exceed ${SQUAD_LIMIT} players` };
+    }
   }
 
-  const [fromUser, toUser] = await Promise.all([
-    prisma.user.findUnique({ where: { id: fromUserId }, select: { budget: true } }),
-    prisma.user.findUnique({ where: { id: toUserId }, select: { budget: true } }),
-  ]);
-  if (!fromUser || !toUser) {
+  const toUser = await prisma.user.findUnique({
+    where: { id: toUserId },
+    select: { budget: true },
+  });
+  if (!toUser) {
     return { ok: false, reason: "User not found" };
   }
 
