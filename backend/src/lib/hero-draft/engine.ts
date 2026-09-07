@@ -286,6 +286,35 @@ async function resyncPendingReleases(roomId: string) {
   return true;
 }
 
+async function countUnpaidRollsInRoom(roomId: string) {
+  return prisma.squadPlayer.count({
+    where: {
+      draftAcquisition: UNPAID_ROLL_ACQUISITION,
+      user: { roomId },
+    },
+  });
+}
+
+/** All unpaid random-roll debts for a manager (purchasePrice is the owed amount). */
+export async function loadUnpaidRollDebts(userId: string) {
+  const rows = await prisma.squadPlayer.findMany({
+    where: { userId, draftAcquisition: UNPAID_ROLL_ACQUISITION },
+    orderBy: { draftSlotIndex: "asc" },
+    select: {
+      id: true,
+      playerId: true,
+      purchasePrice: true,
+      draftSlotIndex: true,
+    },
+  });
+  return rows.map((r) => ({
+    squadPlayerId: r.id,
+    playerId: r.playerId,
+    deductionAmount: Math.max(0, r.purchasePrice),
+    slotIndex: r.draftSlotIndex,
+  }));
+}
+
 function weightsFromSettings(settings: {
   tierWeightGold: number;
   tierWeightHero: number;
@@ -362,6 +391,11 @@ export async function beginRound(roomCode: string) {
     throw new Error("Draft is not in progress");
   }
   if (state.pendingReleaseUserIds.length > 0) {
+    throw new Error("Waiting for forced player releases");
+  }
+  // Never start a new round while unpaid rolls still sit on squads (prevents stacking debts).
+  if ((await countUnpaidRollsInRoom(room.id)) > 0) {
+    await resyncPendingReleases(room.id);
     throw new Error("Waiting for forced player releases");
   }
   if (state.filledSlotIndexes.length >= TOTAL_DRAFT_SLOTS) {
@@ -975,6 +1009,13 @@ async function finishRoundAdvance(roomCode: string, filledSlotIndexes: number[])
 async function finishRoundAdvanceLocked(roomCode: string, filledSlotIndexes: number[]) {
   const room = await loadRoomDraft(roomCode);
   const state = room.heroDraftState!;
+
+  // Block advance while anyone still owes an unpaid random roll.
+  if ((await countUnpaidRollsInRoom(room.id)) > 0) {
+    await resyncPendingReleases(room.id);
+    return;
+  }
+
   const filled = [...new Set(filledSlotIndexes)];
   const alreadyFilled =
     filled.every((i) => state.filledSlotIndexes.includes(i)) &&
@@ -1168,32 +1209,17 @@ async function forceReleasePlayerLocked(
       },
     });
 
-    const unpaidSlot = await tx.squadPlayer.findFirst({
-      where: {
-        userId,
-        playerId: myRoll.playerId,
-        draftAcquisition: UNPAID_ROLL_ACQUISITION,
-      },
+    // Settle unpaid rolls only when budget covers the FULL debt.
+    // Partial-paying one roll (then still owing another) was draining budget
+    // and immediately asking for more releases.
+    const unpaidSlots = await tx.squadPlayer.findMany({
+      where: { userId, draftAcquisition: UNPAID_ROLL_ACQUISITION },
+      orderBy: { draftSlotIndex: "asc" },
     });
-
+    const totalOwed = unpaidSlots.reduce((sum, s) => sum + Math.max(0, s.purchasePrice), 0);
     const userAfter = await tx.user.findUniqueOrThrow({ where: { id: userId } });
-    if (!unpaidSlot) {
-      const otherUnpaid = await tx.squadPlayer.findFirst({
-        where: { userId, draftAcquisition: UNPAID_ROLL_ACQUISITION },
-      });
-      if (otherUnpaid) {
-        await tx.heroDraftState.update({
-          where: { roomId: room.id },
-          data: { status: "awaiting_releases" },
-        });
-        return {
-          stillOwes: true as const,
-          waitingOthers: true,
-          budget: userAfter.budget,
-          remaining: liveState.pendingReleaseUserIds,
-          filledSlotIndexes: liveState.filledSlotIndexes,
-        };
-      }
+
+    if (unpaidSlots.length === 0) {
       const remaining = liveState.pendingReleaseUserIds.filter((id) => id !== userId);
       await tx.heroDraftState.update({
         where: { roomId: room.id },
@@ -1205,10 +1231,11 @@ async function forceReleasePlayerLocked(
         budget: userAfter.budget,
         remaining,
         filledSlotIndexes: liveState.filledSlotIndexes,
+        totalOwed: 0,
       };
     }
 
-    if (userAfter.budget < myRoll.deductionAmount) {
+    if (userAfter.budget < totalOwed) {
       await tx.heroDraftState.update({
         where: { roomId: room.id },
         data: { status: "awaiting_releases" },
@@ -1219,45 +1246,38 @@ async function forceReleasePlayerLocked(
         budget: userAfter.budget,
         remaining: liveState.pendingReleaseUserIds,
         filledSlotIndexes: liveState.filledSlotIndexes,
+        totalOwed,
       };
     }
 
-    const charged = await tryDebitBudget(tx, userId, myRoll.deductionAmount);
-    if (!charged) {
-      return {
-        stillOwes: true as const,
-        waitingOthers: true,
-        budget: userAfter.budget,
-        remaining: liveState.pendingReleaseUserIds,
-        filledSlotIndexes: liveState.filledSlotIndexes,
-      };
-    }
-    await tx.squadPlayer.update({
-      where: { id: unpaidSlot.id },
-      data: { draftAcquisition: PAID_ROLL_ACQUISITION },
-    });
-
-    const stillUnpaid = await tx.squadPlayer.findFirst({
-      where: { userId, draftAcquisition: UNPAID_ROLL_ACQUISITION },
-    });
-    if (stillUnpaid) {
-      await tx.heroDraftState.update({
-        where: { roomId: room.id },
-        data: { status: "awaiting_releases" },
+    for (const slot of unpaidSlots) {
+      const owed = Math.max(0, slot.purchasePrice);
+      if (owed > 0) {
+        const charged = await tryDebitBudget(tx, userId, owed);
+        if (!charged) {
+          // Shouldn't happen after the total check; leave unpaid and ask again.
+          const mid = await tx.user.findUniqueOrThrow({ where: { id: userId } });
+          await tx.heroDraftState.update({
+            where: { roomId: room.id },
+            data: { status: "awaiting_releases" },
+          });
+          return {
+            stillOwes: true as const,
+            waitingOthers: true,
+            budget: mid.budget,
+            remaining: liveState.pendingReleaseUserIds,
+            filledSlotIndexes: liveState.filledSlotIndexes,
+            totalOwed,
+          };
+        }
+      }
+      await tx.squadPlayer.update({
+        where: { id: slot.id },
+        data: { draftAcquisition: PAID_ROLL_ACQUISITION },
       });
-      const paidUser = await tx.user.findUniqueOrThrow({ where: { id: userId } });
-      return {
-        stillOwes: true as const,
-        waitingOthers: true,
-        budget: paidUser.budget,
-        remaining: liveState.pendingReleaseUserIds,
-        filledSlotIndexes: liveState.filledSlotIndexes,
-      };
     }
 
     const remaining = liveState.pendingReleaseUserIds.filter((id) => id !== userId);
-    // Keep awaiting_releases + empty pending so the watcher can begin the next round
-    // without blocking this Release HTTP request on pool seeding.
     await tx.heroDraftState.update({
       where: { roomId: room.id },
       data: {
@@ -1272,6 +1292,7 @@ async function forceReleasePlayerLocked(
       budget: paidUser.budget,
       remaining,
       filledSlotIndexes: liveState.filledSlotIndexes,
+      totalOwed: 0,
     };
   });
 
@@ -1288,7 +1309,7 @@ async function forceReleasePlayerLocked(
   if (outcome.stillOwes) {
     await emitToRoom(room.code, "randomRoll:insufficientFunds", {
       userId,
-      requiredAmount: myRoll.deductionAmount,
+      requiredAmount: outcome.totalOwed,
       budget: outcome.budget,
       playerId: myRoll.playerId,
       roundIndex: myRoll.roundIndex,

@@ -279,12 +279,10 @@ export function HeroDraftClient() {
     .join(", ");
   const releasableSquad = [...data.mySquad]
     .map((sp) => {
-      // Only block THIS round's unpaid roll (by player id, else current slot).
-      const isUnpaidRoll = releasePrompt?.playerId
-        ? sp.player.id === releasePrompt.playerId
-        : releasePrompt?.unpaidSlotIndex != null
-          ? sp.draftSlotIndex === releasePrompt.unpaidSlotIndex
-          : sp.draftAcquisition === "random_roll_unpaid";
+      // Block every unpaid random-roll (can stack if a prior round was skipped).
+      const isUnpaidRoll =
+        sp.draftAcquisition === "random_roll_unpaid" ||
+        (!!releasePrompt?.playerId && sp.player.id === releasePrompt.playerId);
       const noRefund = sp.purchasePrice <= 0;
       return { ...sp, isUnpaidRoll, noRefund, canRelease: !isUnpaidRoll && !noRefund };
     })

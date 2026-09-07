@@ -14,6 +14,7 @@ import {
   closeTradeWindow,
   completeDraft,
   loadPendingReleaseRoll,
+  loadUnpaidRollDebts,
 } from "@/lib/hero-draft/engine";
 import { computeDraftRecap, type RoundHistoryInput } from "@/lib/hero-draft/deductions";
 import { validateTierWeights } from "@/lib/hero-draft/tiers";
@@ -73,13 +74,19 @@ export async function GET(_req: Request, { params }: Ctx) {
     } | null = null;
 
     if (st && st.pendingReleaseUserIds.includes(session.userId!)) {
-      const roll = await loadPendingReleaseRoll(room.id, session.userId!, st.currentRound);
+      const debts = await loadUnpaidRollDebts(session.userId!);
+      const roll =
+        debts.length > 0
+          ? null
+          : await loadPendingReleaseRoll(room.id, session.userId!, st.currentRound);
       const meUser = room.users.find((u) => u.id === session.userId);
+      const totalOwed = debts.reduce((s, d) => s + d.deductionAmount, 0);
+      const primary = debts[debts.length - 1] ?? null;
       pendingRelease = {
-        requiredAmount: roll?.deductionAmount ?? 0,
+        requiredAmount: totalOwed > 0 ? totalOwed : roll?.deductionAmount ?? 0,
         budget: meUser?.budget ?? 0,
-        playerId: roll?.playerId ?? "",
-        unpaidSlotIndex: roll?.slotIndex ?? st.currentSlotIndex,
+        playerId: primary?.playerId ?? roll?.playerId ?? "",
+        unpaidSlotIndex: primary?.slotIndex ?? roll?.slotIndex ?? st.currentSlotIndex,
       };
     }
 
